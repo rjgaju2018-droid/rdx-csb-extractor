@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# App runtime data (auto-created on first run — har user ka alag hota hai)
+rdx_users.json
+rdx_stats.json
+
+# Extraction outputs (user-generated, repo me nahi rakhne)
+*_output.xlsx
+*_output.csv
+*_processed.txt
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
