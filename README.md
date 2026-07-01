@@ -20,28 +20,27 @@ rdx-csb-extractor/
 └── README.md
 ```
 
-## 1. Push this to GitHub
+## 1. Quick Start (Already Configured)
+
+✅ This repository is already configured and ready to use!
 
 ```bash
 cd rdx-csb-extractor
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/<your-username>/rdx-csb-extractor.git
-git push -u origin main
+git clone https://github.com/rjgaju2018-droid/rdx-csb-extractor.git
+cd rdx-csb-extractor
 ```
 
-## 2. Point the updater at your repo
+## 2. GitHub Integration
 
-Open `updater.py` and change:
+✅ **Pre-configured for:** `rjgaju2018-droid/rdx-csb-extractor`
+
+The updater is already pointing to:
 
 ```python
-GITHUB_REPO = "YOUR_GITHUB_USERNAME/rdx-csb-extractor"
+GITHUB_REPO = "rjgaju2018-droid/rdx-csb-extractor"
 ```
 
-to your actual `username/repo`. Commit and push that change before your
-first release.
+No manual configuration needed!
 
 ## 3. Run locally (no exe needed, for development)
 
@@ -149,8 +148,18 @@ extend `updater.py` accordingly.
 
 ---
 
+---
+
+## System Requirements
+
+For detailed system requirements and setup information, see [SYSTEM_INFO.md](SYSTEM_INFO.md).
+
 ## Contact Us
 
 - **Phone:** +91 9983000552
 - **Email:** rjgaju2018@gmail.com
 - **Instagram:** [@gaja_vibe](https://insta.com/@gaja_vibe)
+
+---
+
+**Current Version:** v1.0.7
