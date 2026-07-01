@@ -141,9 +141,9 @@ def resource_path(relative_path: str) -> str:
 #  LOGO HELPER
 # ══════════════════════════════════════════════════════════════════════════════
 LOGO_PATHS = [
-    resource_path("rdx_soloution_logo.png"),
+    resource_path("rdx_solution_logo.png"),
     resource_path("logo.png"),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "rdx_soloution_logo.png"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "rdx_solution_logo.png"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png"),
 ]
 

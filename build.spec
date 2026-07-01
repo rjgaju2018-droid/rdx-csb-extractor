@@ -13,7 +13,7 @@ ROOT = SPECPATH
 
 datas = []
 logo_path = os.path.join(ROOT, "logo.png")
-alt_logo_path = os.path.join(ROOT, "rdx_soloution_logo.png")
+alt_logo_path = os.path.join(ROOT, "rdx_solution_logo.png")
 icon_path = os.path.join(ROOT, "icon.ico")
 
 if os.path.exists(logo_path):
