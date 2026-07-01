@@ -176,17 +176,16 @@ def set_window_icon(win):
 # ══════════════════════════════════════════════════════════════════════════════
 #  SCREEN-RESOLUTION AWARE WINDOW SIZING
 # ══════════════════════════════════════════════════════════════════════════════
-def fit_to_screen(win, base_w=900, base_h=620, design_w=1366, design_h=768,
-                   min_scale=0.72, max_scale=1.35):
-    """Scale + center a window's size according to the user's actual screen
-    resolution, instead of always opening at a fixed 900x620 size."""
+def fit_to_screen(win, base_w=960, base_h=640, min_w=900, min_h=620,
+                   max_w=1500, max_h=980, width_frac=0.62, height_frac=0.80):
+    """Size + center a window as a percentage of the ACTUAL screen resolution
+    (not just a small ratio-capped nudge off a fixed baseline), so it visibly
+    adapts on both small laptops and large/4K monitors."""
     win.update_idletasks()
     sw = win.winfo_screenwidth()
     sh = win.winfo_screenheight()
-    scale = min(sw / design_w, sh / design_h)
-    scale = max(min_scale, min(scale, max_scale))
-    w, h = int(base_w * scale), int(base_h * scale)
-    w, h = min(w, sw - 40), min(h, sh - 60)  # never exceed usable screen area
+    w = max(min_w, min(int(sw * width_frac), max_w, sw - 40))
+    h = max(min_h, min(int(sh * height_frac), max_h, sh - 60))
     x, y = (sw - w) // 2, (sh - h) // 2
     win.geometry(f"{w}x{h}+{x}+{y}")
     return w, h
@@ -380,7 +379,7 @@ class SplashScreen(tk.Toplevel):
         inner = tk.Frame(border, bg=DARK_BG)
         inner.place(relx=0.003, rely=0.006, relwidth=0.994, relheight=0.988)
 
-        logo_img = load_logo(size=(260, 105))
+        logo_img = load_logo(size=(320, 130))
         if logo_img:
             self._logo_ref = logo_img
             lbl = tk.Label(inner, image=logo_img, bg=DARK_BG)
@@ -443,13 +442,13 @@ class LoginPage(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        left = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, width=260)
+        left = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, width=320)
         left.grid(row=0, column=0, sticky="nsew")
         left.grid_propagate(False)
         left.grid_rowconfigure(0, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
-        logo_ctk = load_ctk_logo(size=(200, 82))
+        logo_ctk = load_ctk_logo(size=(260, 108))
         if logo_ctk:
             ctk.CTkLabel(left, image=logo_ctk, text="").grid(row=0, column=0, pady=(0, 10))
         else:
@@ -475,7 +474,15 @@ class LoginPage(ctk.CTkFrame):
         ctk.CTkLabel(right, text="Password", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=4, column=0, sticky="w")
         self.pass_entry = ctk.CTkEntry(right, placeholder_text="Enter password", show="●", height=42, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1, text_color=WHITE, font=("Segoe UI", 12))
         self.pass_entry.grid(row=5, column=0, sticky="ew", pady=(4, 6))
+
+        # ── Keyboard navigation: Tab moves username -> password, Enter
+        # submits from either field. CTkEntry sometimes swallows default Tk
+        # focus traversal, so these are bound explicitly rather than relying
+        # on default <Tab> behaviour.
+        self.user_entry.bind("<Return>", lambda e: (self.pass_entry.focus_set(), "break"))
+        self.user_entry.bind("<Tab>", lambda e: (self.pass_entry.focus_set(), "break"))
         self.pass_entry.bind("<Return>", lambda e: self._login())
+        self.pass_entry.bind("<Shift-Tab>", lambda e: (self.user_entry.focus_set(), "break"))
 
         self.show_pw = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(right, text="Show password", variable=self.show_pw, command=self._toggle_pw, font=("Segoe UI", 10), text_color=GREY_TEXT, fg_color=GOLD_DARK, hover_color=GOLD_MID, checkmark_color=WHITE, border_color=GOLD_DARK).grid(row=6, column=0, sticky="w", pady=(0, 4))
@@ -494,6 +501,9 @@ class LoginPage(ctk.CTkFrame):
 
         ctk.CTkLabel(right, text="New user?", font=("Segoe UI", 10), text_color=GREY_TEXT).grid(row=10, column=0, pady=(0, 2))
         ctk.CTkButton(right, text="Create New Account", height=40, corner_radius=6, fg_color="transparent", border_color=GOLD_DARK, border_width=1, text_color=GOLD_LIGHT, hover_color=CARD_BG, font=("Segoe UI", 11), command=self._new_account).grid(row=11, column=0, sticky="ew", pady=(0, 40))
+
+        # Let keyboard-only users start typing immediately, no mouse click needed
+        self.after(150, self.user_entry.focus_set)
 
     def _tick(self):
         now = datetime.now()
@@ -538,6 +548,13 @@ class LoginPage(ctk.CTkFrame):
         err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         err.pack()
 
+        u.bind("<Return>", lambda e: (p1.focus_set(), "break"))
+        u.bind("<Tab>", lambda e: (p1.focus_set(), "break"))
+        p1.bind("<Return>", lambda e: (p2.focus_set(), "break"))
+        p1.bind("<Tab>", lambda e: (p2.focus_set(), "break"))
+        p2.bind("<Return>", lambda e: do_reset())
+        self.after(150, u.focus_set)
+
         def do_reset():
             uname, np1, np2 = u.get().strip(), p1.get(), p2.get()
             users = load_users()
@@ -577,6 +594,15 @@ class LoginPage(ctk.CTkFrame):
         p2.pack(padx=30, fill="x", pady=4)
         err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         err.pack()
+
+        u.bind("<Return>", lambda e: (em.focus_set(), "break"))
+        u.bind("<Tab>", lambda e: (em.focus_set(), "break"))
+        em.bind("<Return>", lambda e: (p1.focus_set(), "break"))
+        em.bind("<Tab>", lambda e: (p1.focus_set(), "break"))
+        p1.bind("<Return>", lambda e: (p2.focus_set(), "break"))
+        p1.bind("<Tab>", lambda e: (p2.focus_set(), "break"))
+        p2.bind("<Return>", lambda e: do_create())
+        self.after(150, u.focus_set)
 
         def do_create():
             uname, email, np1, np2 = u.get().strip(), em.get().strip(), p1.get(), p2.get()
@@ -1263,7 +1289,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("RDX Solution — Courier Shipping Bill Data Extractor v3.4.2")
-        fit_to_screen(self, base_w=900, base_h=620)   # auto-adjust per screen resolution
+        fit_to_screen(self)   # auto-adjust per screen resolution (percentage-of-screen based)
         self.configure(fg_color=DARK_BG)
         self.resizable(False, False)
         set_window_icon(self)   # RDX logo instead of the default square Tk icon
