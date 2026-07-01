@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 import urllib.request
 
-GITHUB_REPO = "rjgaju2018-droid/CS5_shipping-bill-Extractor"   # <-- just username/repo
+GITHUB_REPO = "rjgaju2018-droid/rdx-csb-extractor"   # <-- just username/repo
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 
