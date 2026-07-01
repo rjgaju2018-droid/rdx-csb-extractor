@@ -4,24 +4,18 @@ __pycache__/
 *.pyo
 .venv/
 venv/
-env/
 
-# App runtime data (auto-created on first run — har user ka alag hota hai)
+# PyInstaller build output
+build/
+dist/
+*.spec.bak
+
+# User data created at runtime (don't commit real user credentials/stats)
 rdx_users.json
 rdx_stats.json
 
-# Extraction outputs (user-generated, repo me nahi rakhne)
-*_output.xlsx
-*_output.csv
-*_processed.txt
-
-# OS / Editor junk
+# OS / editor cruft
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# PyInstaller build artifacts
-build/
-dist/
-*.spec

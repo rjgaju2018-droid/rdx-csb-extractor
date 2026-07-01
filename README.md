@@ -1,102 +1,128 @@
-# RDx Solution — CSB-V Shipping Bill Extractor
+# RDX Solution — CSB-V Shipping Bill Extractor
 
-Login + Dashboard (stats) + Processing Window (CPU/RAM live monitor, shipping
-bill PDF se data extract, Excel me export).
+Desktop app (login + dashboard + processing window) that extracts shipping-bill
+data from CSB-V PDFs into a formatted Excel file. Ships as a Windows `.exe`
+that auto-updates itself via GitHub Releases.
 
----
-
-## 📁 Repo me kaun-kaun si files honi chahiye
+## Project structure
 
 ```
 rdx-csb-extractor/
-├── rdx_csb_app.py                       ← main app
-├── requirements.txt                     ← required libraries list
-├── .gitignore                           ← user-data files repo me na jaayein
-├── README.md                            ← yeh file
-├── rdx_soloution_logo.png  (optional)   ← apna logo (na ho to text-logo dikhega)
-└── .github/
-    └── workflows/
-        └── build-windows-exe.yml        ← auto .exe banane ke liye (optional)
+├── rdx_csb_app.py              # main app (UI + extraction engine)
+├── updater.py                  # GitHub-Releases based auto-updater
+├── version.py                  # single source of truth for the app version
+├── requirements.txt            # runtime dependencies
+├── requirements-build.txt      # build-only dependency (PyInstaller)
+├── build.spec                  # PyInstaller spec (onefile, windowed)
+├── .github/workflows/
+│   └── build-release.yml       # auto-builds the .exe on every version tag
+├── .gitignore
+└── README.md
 ```
 
-**Repo me MAT daalo** (ye khud-ba-khud app run karne par ban jaati hain, isliye `.gitignore` me already excluded hain):
-- `rdx_users.json` (login accounts)
-- `rdx_stats.json` (dashboard stats)
-- koi bhi `*_output.xlsx` / `*_output.csv` (extraction results)
+## 1. Push this to GitHub
 
----
-
-## 🚀 GitHub par upload karne ka step-by-step
-
-### 1. GitHub par naya repository banao
-- github.com → **New repository** → naam do (e.g. `rdx-csb-extractor`) → **Create repository** (README add mat karo, hum khud denge).
-
-### 2. Apne PC par folder taiyar karo
-Ek folder banao (e.g. `rdx-csb-extractor`) aur usme ye files daalo:
-- `rdx_csb_app.py`
-- `requirements.txt`
-- `.gitignore`
-- `README.md`
-- (optional) apna logo `rdx_soloution_logo.png`
-- (optional) `.github/workflows/build-windows-exe.yml`
-
-### 3. Git commands chalao (folder ke andar, cmd/terminal me)
 ```bash
+cd rdx-csb-extractor
 git init
 git add .
-git commit -m "RDx CSB-V Extractor - initial commit"
+git commit -m "Initial commit"
 git branch -M main
 git remote add origin https://github.com/<your-username>/rdx-csb-extractor.git
 git push -u origin main
 ```
-(`<your-username>` apna GitHub username daalo. Pehli baar push karte waqt GitHub login/token maangega.)
 
-Bas — code ab GitHub par upload ho gaya. ✅
+## 2. Point the updater at your repo
 
----
+Open `updater.py` and change:
 
-## ⚠️ Important: GitHub khud is app ko "run" nahi karega
+```python
+GITHUB_REPO = "YOUR_GITHUB_USERNAME/rdx-csb-extractor"
+```
 
-Yeh ek **desktop GUI app** hai (window khulti hai, click hoti hai) — GitHub sirf code store karta hai, GUI render nahi kar sakta. Isliye 2 tarike hain "use" karne ke:
+to your actual `username/repo`. Commit and push that change before your
+first release.
 
-### Option A — Koi bhi clone karke apne PC par chalaye (sabse simple)
+## 3. Run locally (no exe needed, for development)
+
 ```bash
-git clone https://github.com/<your-username>/rdx-csb-extractor.git
-cd rdx-csb-extractor
 pip install -r requirements.txt
 python rdx_csb_app.py
 ```
 
-### Option B — Automatic Windows .exe (bina Python install kiye chalaane ke liye)
-`.github/workflows/build-windows-exe.yml` already is repo me hai. Jab bhi aap ek version-tag push karoge, GitHub Actions khud-ba-khud ek `.exe` bana kar **Releases** section me daal dega — log seedha download karke double-click se chala payenge.
+You also need **Tesseract OCR** installed on your system (only used as a
+fallback for scanned/image-only PDFs):
+- Windows: https://github.com/UB-Mannheim/tesseract/wiki
+- Linux: `sudo apt install tesseract-ocr`
+- Mac: `brew install tesseract`
 
-Tag push karne ka tarika:
+## 4. Cutting a release (this is what makes the auto-update work)
+
+Whenever you want to ship an update — e.g. because a library version bumped,
+or you fixed extraction logic:
+
+1. Bump the version in `version.py`, e.g. `__version__ = "1.0.1"`
+2. Commit it
+3. Tag and push:
+   ```bash
+   git add version.py
+   git commit -m "Bump version to 1.0.1"
+   git tag v1.0.1
+   git push origin main --tags
+   ```
+4. GitHub Actions (`.github/workflows/build-release.yml`) automatically:
+   - spins up a Windows runner
+   - installs everything fresh from `requirements.txt` (so library updates
+     are picked up automatically)
+   - builds `RDX_CSBV_Extractor.exe` with PyInstaller
+   - publishes it as a GitHub Release
+
+No manual exe building required after the first setup — just tag and push.
+
+## 5. How the auto-update actually works on a user's machine
+
+- Every time the Dashboard opens, the app quietly checks
+  `github.com/<repo>/releases/latest` in a background thread (never blocks
+  the UI).
+- If a newer version is published, a small gold banner appears on the
+  Dashboard: **"New version vX.X.X available"** with an **Update Now** button.
+- Clicking it downloads the new `.exe`, then hands off to a tiny batch
+  script that waits for the app to close, swaps the old exe for the new
+  one, and relaunches automatically.
+- If there's no internet or GitHub is unreachable, the check fails silently
+  and the app just keeps working normally — it never blocks startup.
+
+**Note:** this only works in the packaged `.exe` build (`sys.frozen`), not
+when running `python rdx_csb_app.py` directly.
+
+## 6. Building the EXE manually (optional — CI does this for you)
+
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-Phir GitHub repo ke **Actions** tab me build chalti dikhegi (~2-3 min), aur complete hone par **Releases** tab me `RDx-CSB-Extractor.exe` mil jaayega.
-
-(Manually bhi chala sakte ho: repo → **Actions** tab → **Build Windows EXE** → **Run workflow**.)
-
----
-
-## 🔑 Default Login
-- Username: `admin`
-- Password: `admin123`
-
-(Pehli baar run karne par `rdx_users.json` khud ban jaayegi.)
-
----
-
-## 🛠 Local setup (development)
-
-```bash
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Mac/Linux
-pip install -r requirements.txt
-python rdx_csb_app.py
+pip install -r requirements.txt -r requirements-build.txt
+pyinstaller build.spec
 ```
 
-OCR (scanned PDFs) ke liye optional: [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki) install karo. Normal text-PDFs ke liye iski zaroorat nahi.
+Output: `dist/RDX_CSBV_Extractor.exe`
+
+### Why onefile, and the speed trade-off
+
+`build.spec` builds a **single-file** exe on purpose — that's what lets
+`updater.py` cleanly swap the old exe for the new one on update. The
+trade-off is a slightly slower first launch (a few hundred ms) because
+onefile exes unpack themselves into a temp folder on each run. If you'd
+rather prioritize raw startup speed over easy self-updating, switch
+`build.spec` to a `COLLECT()`-based onedir build and distribute the whole
+folder — but then updates have to replace multiple files, so you'd need to
+extend `updater.py` accordingly.
+
+### Avoiding "hangs" on the target machine
+
+- All PDF parsing/OCR happens on a background `threading.Thread`
+  (`ProcessingWindow._proc_thread`) — the UI thread is never blocked, so the
+  window stays responsive even on large batches.
+- UPX compression is turned **off** in `build.spec` — UPX-compressed exes
+  are a common false-positive trigger for antivirus/SmartScreen, which can
+  cause multi-second startup delays or outright blocking on locked-down
+  corporate machines.
+- OCR fallback only kicks in for PDFs with no text layer, so normal
+  digitally-generated CSB-V bills stay on the fast `pdfplumber` path.

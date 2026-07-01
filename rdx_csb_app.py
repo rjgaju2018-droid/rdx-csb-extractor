@@ -1,5 +1,5 @@
 """
-RDX Solution — CSB-V Extractor  (Complete App)
+RDX Solution — CSB-V Extractor (Complete App)
 ===============================================
 Flash Screen  +  Login Page  +  Dashboard (stats)  +  Processing Window
 (CPU/RAM analog dial monitor + Add Shipping Bills + Excel export)
@@ -50,6 +50,10 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
+# ── Auto-updater (GitHub Releases based) ────────────────────────────────────
+from version import __version__
+import updater
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  THEME & COLOURS  (RDX Gold Palette)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -69,7 +73,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  USER STORE  (JSON file based — exe ke liye simple & portable)
+#  USER STORE  (JSON file based)
 # ══════════════════════════════════════════════════════════════════════════════
 USER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rdx_users.json")
 
@@ -83,7 +87,6 @@ def load_users() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    # Default admin account
     default = {"admin": {"password": _hash("admin123"), "email": "admin@rdxsolution.com"}}
     save_users(default)
     return default
@@ -93,7 +96,7 @@ def save_users(users: dict):
         json.dump(users, f, indent=2)
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  STATS STORE  (Dashboard ke liye — total files processed, last run, etc.)
+#  STATS STORE  (Dashboard Data)
 # ══════════════════════════════════════════════════════════════════════════════
 STATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rdx_stats.json")
 
@@ -155,13 +158,12 @@ def load_ctk_logo(size=(220, 90)) -> ctk.CTkImage | None:
     return None
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ROUND DIAL GAUGE  (analog "watch" style — CPU / RAM monitor)
+#  ROUND DIAL GAUGE  (analog watch style — CPU / RAM monitor)
 # ══════════════════════════════════════════════════════════════════════════════
 class DialGauge(tk.Canvas):
-    """An analog watch-style round gauge, 0-100%."""
     def __init__(self, parent, label="CPU", size=140, **kwargs):
         super().__init__(parent, width=size, height=size,
-                          bg=CARD_BG, highlightthickness=0, **kwargs)
+                         bg=CARD_BG, highlightthickness=0, **kwargs)
         self.size = size
         self.label = label
         self.value = 0
@@ -172,28 +174,27 @@ class DialGauge(tk.Canvas):
         s = self.size
         cx, cy = s / 2, s / 2
         r = s * 0.42
-        start_ang, sweep_ang = 135, 270   # degrees, watch-dial style
+        start_ang, sweep_ang = 135, 270
 
-        # Outer ring (case)
         self.create_oval(cx - r - 8, cy - r - 8, cx + r + 8, cy + r + 8,
-                          outline=GOLD_DARK, width=2, fill=DARK_BG)
-        # Track arc
+                         outline=GOLD_DARK, width=2, fill=DARK_BG)
         self.create_arc(cx - r, cy - r, cx + r, cy + r,
                          start=start_ang, extent=-sweep_ang,
                          style="arc", outline="#3A3322", width=8)
-        # Value arc (colour shifts green -> gold -> red)
+        
         if value < 60:
             col = GREEN_OK
         elif value < 85:
             col = GOLD_MID
         else:
             col = RED_ERR
+            
         val_extent = -sweep_ang * (value / 100.0)
         if value > 0:
             self.create_arc(cx - r, cy - r, cx + r, cy + r,
                              start=start_ang, extent=val_extent,
                              style="arc", outline=col, width=8)
-        # Tick marks
+                             
         for i in range(11):
             ang = math.radians(start_ang - sweep_ang * (i / 10))
             x1 = cx + (r - 10) * math.cos(ang)
@@ -201,67 +202,62 @@ class DialGauge(tk.Canvas):
             x2 = cx + (r - 2) * math.cos(ang)
             y2 = cy - (r - 2) * math.sin(ang)
             self.create_line(x1, y1, x2, y2, fill=GREY_TEXT, width=1)
-        # Needle
+            
         needle_ang = math.radians(start_ang - sweep_ang * (value / 100.0))
         nx = cx + (r - 14) * math.cos(needle_ang)
         ny = cy - (r - 14) * math.sin(needle_ang)
         self.create_line(cx, cy, nx, ny, fill=col, width=3, capstyle="round")
         self.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, fill=GOLD_LIGHT, outline="")
 
-        # Centre readout
         self.create_text(cx, cy + r * 0.45, text=f"{value:.0f}%",
-                          fill=WHITE, font=("Segoe UI", 13, "bold"))
+                         fill=WHITE, font=("Segoe UI", 13, "bold"))
         self.create_text(cx, cy + r * 0.45 + 18, text=self.label,
-                          fill=GREY_TEXT, font=("Segoe UI", 9))
+                         fill=GREY_TEXT, font=("Segoe UI", 9))
 
     def set_value(self, value):
         self.value = max(0, min(100, value))
         self._draw(self.value)
 
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-#  FLASH / SPLASH SCREEN  (in-window frame — NOT a Toplevel, no wait_window block)
+#  FLASH / SPLASH SCREEN
 # ══════════════════════════════════════════════════════════════════════════════
-class SplashScreen(ctk.CTkFrame):
-    """
-    NOTE: pehle yeh ek alag Toplevel window thi jise root.withdraw() +
-    self.wait_window(splash) se modal/blocking dikhaya jaata tha. Yeh
-    combination (withdraw + wait_window) customtkinter ke background
-    scaling-tracker thread ke saath Windows par kabhi-kabhi deadlock/freeze
-    kar deta tha. Ab splash sirf ek normal Frame hai jo App window ke
-    andar hi dikhti hai aur self.after() se timer-based aage badhti hai —
-    koi blocking loop nahi, koi freeze nahi.
-    """
-    def __init__(self, parent, on_done):
-        super().__init__(parent, fg_color=DARK_BG)
-        self.on_done = on_done
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+class SplashScreen(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.overrideredirect(True)
+        self.configure(bg=DARK_BG)
 
-        inner = ctk.CTkFrame(self, fg_color=DARK_BG, border_color=GOLD_MID,
-                              border_width=2, corner_radius=10)
-        inner.place(relx=0.5, rely=0.5, anchor="center", width=480, height=280)
+        W, H = 540, 320
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        self.geometry(f"{W}x{H}+{(sw-W)//2}+{(sh-H)//2}")
 
-        logo_ctk = load_ctk_logo(size=(240, 98))
-        if logo_ctk:
-            ctk.CTkLabel(inner, image=logo_ctk, text="").place(relx=0.5, rely=0.30, anchor="center")
+        border = tk.Frame(self, bg=GOLD_MID, bd=0)
+        border.place(relx=0, rely=0, relwidth=1, relheight=1)
+        inner = tk.Frame(border, bg=DARK_BG)
+        inner.place(relx=0.003, rely=0.006, relwidth=0.994, relheight=0.988)
+
+        logo_img = load_logo(size=(260, 105))
+        if logo_img:
+            self._logo_ref = logo_img
+            lbl = tk.Label(inner, image=logo_img, bg=DARK_BG)
+            lbl.place(relx=0.5, rely=0.32, anchor="center")
         else:
-            ctk.CTkLabel(inner, text="RDx Solution", font=("Georgia", 26, "bold"),
-                         text_color=GOLD_LIGHT).place(relx=0.5, rely=0.30, anchor="center")
+            tk.Label(inner, text="RDx Solution", font=("Georgia", 28, "bold"),
+                     fg=GOLD_LIGHT, bg=DARK_BG).place(relx=0.5, rely=0.32, anchor="center")
 
-        ctk.CTkLabel(inner, text="Courier Shipping Bill  ·  Data Extractor",
-                     font=("Segoe UI", 11), text_color=GREY_TEXT
-                     ).place(relx=0.5, rely=0.58, anchor="center")
+        tk.Label(inner, text="Courier Shipping Bill  ·  Data Extractor",
+                 font=("Segoe UI", 11), fg=GREY_TEXT, bg=DARK_BG
+                 ).place(relx=0.5, rely=0.62, anchor="center")
 
-        self.progress = ctk.CTkProgressBar(inner, width=360, height=6,
-                                           fg_color="#3A3322", progress_color=GOLD_LIGHT)
-        self.progress.set(0)
-        self.progress.place(relx=0.5, rely=0.74, anchor="center")
+        self.bar_bg = tk.Frame(inner, bg=GOLD_DARK, height=4, width=380)
+        self.bar_bg.place(relx=0.5, rely=0.80, anchor="center")
+        self.bar_fill = tk.Frame(inner, bg=GOLD_LIGHT, height=4, width=0)
+        self.bar_fill.place(x=(W - 380) // 2, rely=0.80, anchor="w")
 
-        self.status = ctk.CTkLabel(inner, text="Initializing…",
-                                   font=("Segoe UI", 9), text_color=GREY_TEXT)
-        self.status.place(relx=0.5, rely=0.85, anchor="center")
+        self.status = tk.Label(inner, text="Initializing…",
+                               font=("Segoe UI", 9), fg=GREY_TEXT, bg=DARK_BG)
+        self.status.place(relx=0.5, rely=0.89, anchor="center")
 
         self._steps = [
             (0.25, "Loading configuration…"),
@@ -270,34 +266,25 @@ class SplashScreen(ctk.CTkFrame):
             (1.00, "Welcome to RDx Solution!"),
         ]
         self._step_idx = 0
-        self._finished = False
         self.after(300, self._advance)
-        # Failsafe: agar koi step fail ho jaaye to bhi 4 sec me login khud khul jaaye
-        self.after(4000, self._finish)
+        self.after(4000, self._failsafe_close)
+
+    def _failsafe_close(self):
+        try:
+            if self.winfo_exists():
+                self.destroy()
+        except Exception:
+            pass
 
     def _advance(self):
-        if self._finished:
-            return
         if self._step_idx >= len(self._steps):
-            self._finish()
+            self.destroy()
             return
         frac, msg = self._steps[self._step_idx]
-        try:
-            self.progress.set(frac)
-            self.status.configure(text=msg)
-        except Exception:
-            pass
+        self.bar_fill.configure(width=int(380 * frac))
+        self.status.configure(text=msg)
         self._step_idx += 1
-        self.after(450, self._advance)
-
-    def _finish(self):
-        if self._finished:
-            return
-        self._finished = True
-        try:
-            self.on_done()
-        except Exception:
-            pass
+        self.after(600, self._advance)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  LOGIN PAGE
@@ -309,12 +296,10 @@ class LoginPage(ctk.CTkFrame):
         self.users = load_users()
         self._build()
 
-    # ── Live clock ────────────────────────────────────────────────────────────
     def _build(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # ── LEFT PANEL (decoration) ──────────────────────────────────────────
         left = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, width=260)
         left.grid(row=0, column=0, sticky="nsew")
         left.grid_propagate(False)
@@ -325,104 +310,51 @@ class LoginPage(ctk.CTkFrame):
         if logo_ctk:
             ctk.CTkLabel(left, image=logo_ctk, text="").grid(row=0, column=0, pady=(0, 10))
         else:
-            ctk.CTkLabel(left, text="RDx\nSolution",
-                         font=("Georgia", 26, "bold"),
-                         text_color=GOLD_LIGHT).grid(row=0, column=0)
+            ctk.CTkLabel(left, text="RDx\nSolution", font=("Georgia", 26, "bold"), text_color=GOLD_LIGHT).grid(row=0, column=0)
 
-        ctk.CTkLabel(left,
-                     text="Shipping Bill\nData Extractor",
-                     font=("Segoe UI", 12),
-                     text_color=GREY_TEXT).grid(row=1, column=0, pady=(0, 40))
+        ctk.CTkLabel(left, text="Shipping Bill\nData Extractor", font=("Segoe UI", 12), text_color=GREY_TEXT).grid(row=1, column=0, pady=(0, 40))
 
-        # Live datetime on left panel
-        self.dt_label = ctk.CTkLabel(left, text="", font=("Consolas", 10),
-                                     text_color=GOLD_DARK)
+        self.dt_label = ctk.CTkLabel(left, text="", font=("Consolas", 10), text_color=GOLD_DARK)
         self.dt_label.grid(row=2, column=0, pady=(0, 20))
         self._tick()
 
-        # ── RIGHT PANEL (form) ───────────────────────────────────────────────
         right = ctk.CTkFrame(self, fg_color=DARK_BG, corner_radius=0)
         right.grid(row=0, column=1, sticky="nsew", padx=50)
         right.grid_columnconfigure(0, weight=1)
-        self.master.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(right, text="Welcome Back",
-                     font=("Georgia", 22, "bold"),
-                     text_color=GOLD_LIGHT).grid(row=0, column=0, pady=(60, 4), sticky="w")
-        ctk.CTkLabel(right, text="Sign in to continue",
-                     font=("Segoe UI", 11),
-                     text_color=GREY_TEXT).grid(row=1, column=0, sticky="w", pady=(0, 30))
+        ctk.CTkLabel(right, text="Welcome Back", font=("Georgia", 22, "bold"), text_color=GOLD_LIGHT).grid(row=0, column=0, pady=(60, 4), sticky="w")
+        ctk.CTkLabel(right, text="Sign in to continue", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=1, column=0, sticky="w", pady=(0, 30))
 
-        # Username
-        ctk.CTkLabel(right, text="Username", font=("Segoe UI", 11),
-                     text_color=GREY_TEXT).grid(row=2, column=0, sticky="w")
-        self.user_entry = ctk.CTkEntry(right, placeholder_text="Enter username",
-                                       height=42, fg_color=CARD_BG,
-                                       border_color=GOLD_DARK, border_width=1,
-                                       text_color=WHITE, font=("Segoe UI", 12))
+        ctk.CTkLabel(right, text="Username", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=2, column=0, sticky="w")
+        self.user_entry = ctk.CTkEntry(right, placeholder_text="Enter username", height=42, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1, text_color=WHITE, font=("Segoe UI", 12))
         self.user_entry.grid(row=3, column=0, sticky="ew", pady=(4, 14))
 
-        # Password
-        ctk.CTkLabel(right, text="Password", font=("Segoe UI", 11),
-                     text_color=GREY_TEXT).grid(row=4, column=0, sticky="w")
-        self.pass_entry = ctk.CTkEntry(right, placeholder_text="Enter password",
-                                       show="●", height=42, fg_color=CARD_BG,
-                                       border_color=GOLD_DARK, border_width=1,
-                                       text_color=WHITE, font=("Segoe UI", 12))
+        ctk.CTkLabel(right, text="Password", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=4, column=0, sticky="w")
+        self.pass_entry = ctk.CTkEntry(right, placeholder_text="Enter password", show="●", height=42, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1, text_color=WHITE, font=("Segoe UI", 12))
         self.pass_entry.grid(row=5, column=0, sticky="ew", pady=(4, 6))
         self.pass_entry.bind("<Return>", lambda e: self._login())
 
-        # Show/hide password toggle
         self.show_pw = tk.BooleanVar(value=False)
-        ctk.CTkCheckBox(right, text="Show password", variable=self.show_pw,
-                        command=self._toggle_pw,
-                        font=("Segoe UI", 10), text_color=GREY_TEXT,
-                        fg_color=GOLD_DARK, hover_color=GOLD_MID,
-                        checkmark_color=WHITE, border_color=GOLD_DARK
-                        ).grid(row=6, column=0, sticky="w", pady=(0, 4))
+        ctk.CTkCheckBox(right, text="Show password", variable=self.show_pw, command=self._toggle_pw, font=("Segoe UI", 10), text_color=GREY_TEXT, fg_color=GOLD_DARK, hover_color=GOLD_MID, checkmark_color=WHITE, border_color=GOLD_DARK).grid(row=6, column=0, sticky="w", pady=(0, 4))
 
-        # Forgot password link
-        fp_btn = ctk.CTkButton(right, text="Forgot Password?", fg_color="transparent",
-                               text_color=GOLD_MID, hover_color=CARD_BG,
-                               font=("Segoe UI", 10, "underline"), height=20,
-                               command=self._forgot_pw)
+        fp_btn = ctk.CTkButton(right, text="Forgot Password?", fg_color="transparent", text_color=GOLD_MID, hover_color=CARD_BG, font=("Segoe UI", 10, "underline"), height=20, command=self._forgot_pw)
         fp_btn.grid(row=6, column=0, sticky="e")
 
-        # Error label
-        self.err_label = ctk.CTkLabel(right, text="", text_color=RED_ERR,
-                                      font=("Segoe UI", 10))
+        self.err_label = ctk.CTkLabel(right, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         self.err_label.grid(row=7, column=0, pady=(4, 0))
 
-        # Login button
-        self.login_btn = ctk.CTkButton(
-            right, text="LOGIN",
-            height=44, corner_radius=6,
-            fg_color=GOLD_MID, hover_color=GOLD_DARK,
-            text_color=DARK_BG, font=("Segoe UI", 13, "bold"),
-            command=self._login
-        )
+        self.login_btn = ctk.CTkButton(right, text="LOGIN", height=44, corner_radius=6, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 13, "bold"), command=self._login)
         self.login_btn.grid(row=8, column=0, sticky="ew", pady=(16, 10))
 
-        # Divider
         div = ctk.CTkFrame(right, fg_color=GOLD_DARK, height=1)
         div.grid(row=9, column=0, sticky="ew", pady=10)
 
-        # Create account
-        ctk.CTkLabel(right, text="New user?", font=("Segoe UI", 10),
-                     text_color=GREY_TEXT).grid(row=10, column=0, pady=(0, 2))
-        ctk.CTkButton(right, text="Create New Account",
-                      height=40, corner_radius=6,
-                      fg_color="transparent", border_color=GOLD_DARK, border_width=1,
-                      text_color=GOLD_LIGHT, hover_color=CARD_BG,
-                      font=("Segoe UI", 11),
-                      command=self._new_account
-                      ).grid(row=11, column=0, sticky="ew", pady=(0, 40))
+        ctk.CTkLabel(right, text="New user?", font=("Segoe UI", 10), text_color=GREY_TEXT).grid(row=10, column=0, pady=(0, 2))
+        ctk.CTkButton(right, text="Create New Account", height=40, corner_radius=6, fg_color="transparent", border_color=GOLD_DARK, border_width=1, text_color=GOLD_LIGHT, hover_color=CARD_BG, font=("Segoe UI", 11), command=self._new_account).grid(row=11, column=0, sticky="ew", pady=(0, 40))
 
     def _tick(self):
         now = datetime.now()
-        day  = now.strftime("%A")
-        date = now.strftime("%d %B %Y")
-        time_str = now.strftime("%I:%M:%S %p")
+        day, date, time_str = now.strftime("%A"), now.strftime("%d %b %Y"), now.strftime("%I:%M:%S %p")
         self.dt_label.configure(text=f"{day}\n{date}\n{time_str}")
         self.after(1000, self._tick)
 
@@ -430,22 +362,20 @@ class LoginPage(ctk.CTkFrame):
         self.pass_entry.configure(show="" if self.show_pw.get() else "●")
 
     def _login(self):
-        uname = self.user_entry.get().strip()
-        pw    = self.pass_entry.get()
+        uname, pw = self.user_entry.get().strip(), self.pass_entry.get()
         self.users = load_users()
         if not uname or not pw:
-            self.err_label.configure(text="⚠  Username aur password dono required hain.")
+            self.err_label.configure(text="⚠ Username and password are required.")
             return
         if uname not in self.users:
-            self.err_label.configure(text="✗  Username nahi mila.")
+            self.err_label.configure(text="✗ Username not found.")
             return
         if self.users[uname]["password"] != _hash(pw):
-            self.err_label.configure(text="✗  Password galat hai.")
+            self.err_label.configure(text="✗ Incorrect password.")
             return
         self.err_label.configure(text="")
         self.on_login_success(uname)
 
-    # ── Forgot Password popup ─────────────────────────────────────────────────
     def _forgot_pw(self):
         win = ctk.CTkToplevel(self)
         win.title("Reset Password")
@@ -453,49 +383,37 @@ class LoginPage(ctk.CTkFrame):
         win.configure(fg_color=DARK_BG)
         win.grab_set()
 
-        ctk.CTkLabel(win, text="Reset Password", font=("Georgia", 16, "bold"),
-                     text_color=GOLD_LIGHT).pack(pady=(24, 4))
-        ctk.CTkLabel(win, text="Username aur naya password enter karo",
-                     font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
+        ctk.CTkLabel(win, text="Reset Password", font=("Georgia", 16, "bold"), text_color=GOLD_LIGHT).pack(pady=(24, 4))
+        ctk.CTkLabel(win, text="Enter username and new password", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
 
-        u = ctk.CTkEntry(win, placeholder_text="Username", height=38,
-                         fg_color=CARD_BG, border_color=GOLD_DARK,
-                         text_color=WHITE)
+        u = ctk.CTkEntry(win, placeholder_text="Username", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         u.pack(padx=30, fill="x", pady=4)
-        p1 = ctk.CTkEntry(win, placeholder_text="Naya Password", show="●", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        p1 = ctk.CTkEntry(win, placeholder_text="New Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         p1.pack(padx=30, fill="x", pady=4)
-        p2 = ctk.CTkEntry(win, placeholder_text="Password Confirm karo", show="●", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        p2 = ctk.CTkEntry(win, placeholder_text="Confirm New Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         p2.pack(padx=30, fill="x", pady=4)
         err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         err.pack()
 
         def do_reset():
-            uname = u.get().strip()
-            np1   = p1.get()
-            np2   = p2.get()
+            uname, np1, np2 = u.get().strip(), p1.get(), p2.get()
             users = load_users()
             if uname not in users:
-                err.configure(text="✗  Username nahi mila.")
+                err.configure(text="✗ Username not found.")
                 return
             if len(np1) < 6:
-                err.configure(text="⚠  Password kam se kam 6 characters ka hona chahiye.")
+                err.configure(text="⚠ Password must be at least 6 characters.")
                 return
             if np1 != np2:
-                err.configure(text="✗  Passwords match nahi kar rahe.")
+                err.configure(text="✗ Passwords do not match.")
                 return
             users[uname]["password"] = _hash(np1)
             save_users(users)
-            messagebox.showinfo("Done", "Password reset ho gaya! ✅", parent=win)
+            messagebox.showinfo("Done", "Password reset successfully! ✅", parent=win)
             win.destroy()
 
-        ctk.CTkButton(win, text="Reset Password", height=40,
-                      fg_color=GOLD_MID, hover_color=GOLD_DARK,
-                      text_color=DARK_BG, font=("Segoe UI", 11, "bold"),
-                      command=do_reset).pack(padx=30, fill="x", pady=12)
+        ctk.CTkButton(win, text="Reset Password", height=40, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 11, "bold"), command=do_reset).pack(padx=30, fill="x", pady=12)
 
-    # ── New Account popup ─────────────────────────────────────────────────────
     def _new_account(self):
         win = ctk.CTkToplevel(self)
         win.title("Create Account")
@@ -503,52 +421,40 @@ class LoginPage(ctk.CTkFrame):
         win.configure(fg_color=DARK_BG)
         win.grab_set()
 
-        ctk.CTkLabel(win, text="Create Account", font=("Georgia", 16, "bold"),
-                     text_color=GOLD_LIGHT).pack(pady=(24, 4))
-        ctk.CTkLabel(win, text="Apna naya account banao",
-                     font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
+        ctk.CTkLabel(win, text="Create Account", font=("Georgia", 16, "bold"), text_color=GOLD_LIGHT).pack(pady=(24, 4))
+        ctk.CTkLabel(win, text="Set up your extraction credentials", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
 
-        u  = ctk.CTkEntry(win, placeholder_text="Username", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        u = ctk.CTkEntry(win, placeholder_text="Username", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         u.pack(padx=30, fill="x", pady=4)
-        em = ctk.CTkEntry(win, placeholder_text="Email (optional)", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        em = ctk.CTkEntry(win, placeholder_text="Email (optional)", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         em.pack(padx=30, fill="x", pady=4)
-        p1 = ctk.CTkEntry(win, placeholder_text="Password", show="●", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        p1 = ctk.CTkEntry(win, placeholder_text="Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         p1.pack(padx=30, fill="x", pady=4)
-        p2 = ctk.CTkEntry(win, placeholder_text="Confirm Password", show="●", height=38,
-                          fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        p2 = ctk.CTkEntry(win, placeholder_text="Confirm Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         p2.pack(padx=30, fill="x", pady=4)
         err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         err.pack()
 
         def do_create():
-            uname = u.get().strip()
-            email = em.get().strip()
-            np1   = p1.get()
-            np2   = p2.get()
+            uname, email, np1, np2 = u.get().strip(), em.get().strip(), p1.get(), p2.get()
             users = load_users()
             if not uname:
-                err.configure(text="⚠  Username required hai."); return
+                err.configure(text="⚠ Username is required."); return
             if uname in users:
-                err.configure(text="✗  Yeh username pehle se exist karta hai."); return
+                err.configure(text="✗ Username already exists."); return
             if len(np1) < 6:
-                err.configure(text="⚠  Password kam se kam 6 characters."); return
+                err.configure(text="⚠ Password must be at least 6 characters."); return
             if np1 != np2:
-                err.configure(text="✗  Passwords match nahi kar rahe."); return
+                err.configure(text="✗ Passwords do not match."); return
             users[uname] = {"password": _hash(np1), "email": email}
             save_users(users)
-            messagebox.showinfo("Account Bana!", f"Account '{uname}' ban gaya ✅\nAb login karo.", parent=win)
+            messagebox.showinfo("Success", f"Account '{uname}' created! ✅\nPlease login.", parent=win)
             win.destroy()
 
-        ctk.CTkButton(win, text="Create Account", height=40,
-                      fg_color=GOLD_MID, hover_color=GOLD_DARK,
-                      text_color=DARK_BG, font=("Segoe UI", 11, "bold"),
-                      command=do_create).pack(padx=30, fill="x", pady=12)
+        ctk.CTkButton(win, text="Create Account", height=40, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 11, "bold"), command=do_create).pack(padx=30, fill="x", pady=12)
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  DASHBOARD  (login ke baad — stats + "Open Processing Window")
+#  DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 class Dashboard(ctk.CTkFrame):
     def __init__(self, master, username, on_open_processing):
@@ -560,7 +466,6 @@ class Dashboard(ctk.CTkFrame):
     def _build(self):
         self.grid_columnconfigure(0, weight=1)
 
-        # ── Top bar ──────────────────────────────────────────────────────────
         topbar = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, height=56)
         topbar.grid(row=0, column=0, sticky="ew")
         topbar.grid_columnconfigure(1, weight=1)
@@ -569,44 +474,28 @@ class Dashboard(ctk.CTkFrame):
         if logo_ctk:
             ctk.CTkLabel(topbar, image=logo_ctk, text="").grid(row=0, column=0, padx=16, pady=6)
         else:
-            ctk.CTkLabel(topbar, text="RDx Solution", font=("Georgia", 14, "bold"),
-                         text_color=GOLD_LIGHT).grid(row=0, column=0, padx=16)
+            ctk.CTkLabel(topbar, text="RDx Solution", font=("Georgia", 14, "bold"), text_color=GOLD_LIGHT).grid(row=0, column=0, padx=16)
 
-        ctk.CTkLabel(topbar, text="Dashboard", font=("Segoe UI", 13, "bold"),
-                     text_color=GOLD_MID).grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(topbar, text=f"Dashboard  ·  v{__version__}", font=("Segoe UI", 13, "bold"), text_color=GOLD_MID).grid(row=0, column=1, sticky="w")
 
         user_frame = ctk.CTkFrame(topbar, fg_color="transparent")
         user_frame.grid(row=0, column=2, padx=16)
-        ctk.CTkLabel(user_frame, text=f"👤 {self.username}",
-                     font=("Segoe UI", 10), text_color=GREY_TEXT).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(user_frame, text="Logout", width=70, height=28,
-                      fg_color=GOLD_DARK, hover_color=RED_ERR,
-                      text_color=WHITE, font=("Segoe UI", 9),
-                      command=self._logout).pack(side="left")
+        ctk.CTkLabel(user_frame, text=f"👤 {self.username}", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(user_frame, text="Logout", width=70, height=28, fg_color=GOLD_DARK, hover_color=RED_ERR, text_color=WHITE, font=("Segoe UI", 9), command=self._logout).pack(side="left")
 
-        # ── Welcome ──────────────────────────────────────────────────────────
-        ctk.CTkLabel(self, text=f"Welcome back, {self.username} 👋",
-                     font=("Georgia", 20, "bold"),
-                     text_color=GOLD_LIGHT).grid(row=1, column=0, sticky="w", padx=30, pady=(24, 2))
-        ctk.CTkLabel(self, text="Shipping Bill Data Extractor — overview",
-                     font=("Segoe UI", 11), text_color=GREY_TEXT
-                     ).grid(row=2, column=0, sticky="w", padx=30, pady=(0, 16))
+        ctk.CTkLabel(self, text=f"Welcome back, {self.username} 👋", font=("Georgia", 20, "bold"), text_color=GOLD_LIGHT).grid(row=1, column=0, sticky="w", padx=30, pady=(24, 2))
+        ctk.CTkLabel(self, text="Courier Shipping Bill Data Extractor — overview", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=2, column=0, sticky="w", padx=30, pady=(0, 16))
 
-        # ── Stats cards ──────────────────────────────────────────────────────
         stats = load_stats()
         cards = ctk.CTkFrame(self, fg_color="transparent")
         cards.grid(row=3, column=0, sticky="ew", padx=30)
-        for i in range(4):
-            cards.grid_columnconfigure(i, weight=1)
+        for i in range(4): cards.grid_columnconfigure(i, weight=1)
 
         def stat_card(col, title, value):
-            c = ctk.CTkFrame(cards, fg_color=CARD_BG, corner_radius=10,
-                              border_color=GOLD_DARK, border_width=1)
+            c = ctk.CTkFrame(cards, fg_color=CARD_BG, corner_radius=10, border_color=GOLD_DARK, border_width=1)
             c.grid(row=0, column=col, sticky="nsew", padx=8, pady=4)
-            ctk.CTkLabel(c, text=str(value), font=("Segoe UI", 22, "bold"),
-                         text_color=GOLD_LIGHT).pack(pady=(16, 0))
-            ctk.CTkLabel(c, text=title, font=("Segoe UI", 10),
-                         text_color=GREY_TEXT).pack(pady=(2, 16))
+            ctk.CTkLabel(c, text=str(value), font=("Segoe UI", 22, "bold"), text_color=GOLD_LIGHT).pack(pady=(16, 0))
+            ctk.CTkLabel(c, text=title, font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(2, 16))
 
         stat_card(0, "Total Files Processed", stats["total_files_processed"])
         stat_card(1, "Total Rows Extracted", stats["total_rows_extracted"])
@@ -614,17 +503,11 @@ class Dashboard(ctk.CTkFrame):
         stat_card(3, "Last Run", stats["last_run"] or "—")
 
         if stats["last_output"]:
-            ctk.CTkLabel(self,
-                         text=f"📄 Last Excel Output: {stats['last_output']}",
-                         font=("Segoe UI", 10), text_color=GREY_TEXT
-                         ).grid(row=4, column=0, sticky="w", padx=30, pady=(8, 0))
+            ctk.CTkLabel(self, text=f"📄 Last Excel Output: {stats['last_output']}", font=("Segoe UI", 10), text_color=GREY_TEXT).grid(row=4, column=0, sticky="w", padx=30, pady=(8, 0))
 
-        # ── CPU / RAM mini-watch on dashboard ───────────────────────────────
-        mon = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=10,
-                            border_color=GOLD_DARK, border_width=1)
+        mon = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=10, border_color=GOLD_DARK, border_width=1)
         mon.grid(row=5, column=0, sticky="ew", padx=30, pady=24)
-        ctk.CTkLabel(mon, text="System Monitor", font=("Segoe UI", 12, "bold"),
-                     text_color=GOLD_MID).pack(pady=(12, 4))
+        ctk.CTkLabel(mon, text="System Monitor", font=("Segoe UI", 12, "bold"), text_color=GOLD_MID).pack(pady=(12, 4))
         gframe = ctk.CTkFrame(mon, fg_color="transparent")
         gframe.pack(pady=(0, 14))
         self.cpu_gauge = DialGauge(gframe, label="CPU", size=120)
@@ -634,28 +517,50 @@ class Dashboard(ctk.CTkFrame):
         self._monitoring = True
         self._update_gauges()
 
-        # ── Open processing window button ───────────────────────────────────
-        ctk.CTkButton(self, text="▶  Open Processing Window",
-                      height=50, corner_radius=8,
-                      fg_color=GOLD_MID, hover_color=GOLD_DARK,
-                      text_color=DARK_BG, font=("Segoe UI", 14, "bold"),
-                      command=self._open
-                      ).grid(row=6, column=0, sticky="ew", padx=30, pady=(0, 30))
+        ctk.CTkButton(self, text="▶  Open Processing Window", height=50, corner_radius=8, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 14, "bold"), command=self._open).grid(row=6, column=0, sticky="ew", padx=30, pady=(0, 30))
+
+        # ── Update banner (hidden until a newer release is actually found) ──
+        self.update_banner = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=8, border_color=GOLD_LIGHT, border_width=1)
+        self.update_label = ctk.CTkLabel(self.update_banner, text="", font=("Segoe UI", 11), text_color=GOLD_LIGHT)
+        self.update_label.pack(side="left", padx=14, pady=10)
+        self.update_btn = ctk.CTkButton(self.update_banner, text="Update Now", width=110, height=30, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, command=self._apply_update)
+        self.update_btn.pack(side="right", padx=14, pady=10)
+        self._update_asset_url = None
+        threading.Thread(target=self._check_update_bg, daemon=True).start()
+
+    def _check_update_bg(self):
+        has_update, latest_tag, asset_url = updater.check_for_update()
+        if has_update:
+            self._update_asset_url = asset_url
+            self.after(0, lambda: self._show_update_banner(latest_tag))
+
+    def _show_update_banner(self, latest_tag):
+        self.update_label.configure(text=f"🔔 New version {latest_tag} available (you have v{__version__})")
+        self.update_banner.grid(row=7, column=0, sticky="ew", padx=30, pady=(0, 20))
+
+    def _apply_update(self):
+        self.update_btn.configure(state="disabled", text="Updating…")
+        threading.Thread(target=self._apply_update_bg, daemon=True).start()
+
+    def _apply_update_bg(self):
+        try:
+            updater.download_and_apply_update(self._update_asset_url)
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror(
+                "Update Failed",
+                f"Could not apply update automatically: {e}\n\n"
+                "You can download the latest version manually from the GitHub Releases page."
+            ))
+            self.after(0, lambda: self.update_btn.configure(state="normal", text="Update Now"))
 
     def _update_gauges(self):
-        if not getattr(self, "_monitoring", False):
-            return
+        if not getattr(self, "_monitoring", False): return
         try:
-            if PSUTIL_AVAILABLE:
-                cpu = psutil.cpu_percent(interval=None)
-                ram = psutil.virtual_memory().percent
-            else:
-                cpu = ram = 0
+            cpu, ram = (psutil.cpu_percent(interval=None), psutil.virtual_memory().percent) if PSUTIL_AVAILABLE else (0, 0)
             self.cpu_gauge.set_value(cpu)
             self.ram_gauge.set_value(ram)
             self.after(1200, self._update_gauges)
-        except Exception:
-            pass
+        except Exception: pass
 
     def _open(self):
         self._monitoring = False
@@ -666,194 +571,200 @@ class Dashboard(ctk.CTkFrame):
         self.master._show_login()
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CSB EXTRACTOR — BACKEND  (same as csb_extractor_final.py)
+#  CSB EXTRACTOR ENGINE  (real pdfplumber + OCR fallback extraction)
 # ══════════════════════════════════════════════════════════════════════════════
+DPI_SCALE  = 3          # OCR quality (higher = slower but more accurate)
+OCR_CONFIG = "--psm 6"  # Tesseract page segmentation mode
+
 COLUMNS = [
-    "File Name", "CSB Number", "Name of the Consignee", "Filing Date",
-    "HAWB Number", "EGM Number", "EGM Date", "Invoice Number", "Invoice Date",
-    "Goods Description", "Total Taxable Value", "Taxable Value Currency",
-    "FOB Value (In INR)", "Exchange Rate",
+    "File Name",
+    "CSB Number",
+    "Exchange Rate",
+    "Total Taxable Value",
+    "Taxable Value Currency",
+    "FOB Value (In INR)",
+    "Filing Date",
+    "EGM Number",
+    "EGM Date",
+    "HAWB Number",
+    "Invoice Number",
+    "Invoice Date",
+    "Goods Description",
 ]
 
+# ── pdfplumber — PRIMARY METHOD (text-layer PDFs) ───────────────────────────
+
 def get_all_words(pdf_path):
+    """Har word uski (x, y, page) position ke saath extract karta hai."""
     all_words = []
     with pdfplumber.open(pdf_path) as pdf:
         for pg_num, page in enumerate(pdf.pages, 1):
             for w in page.extract_words():
-                all_words.append({"text": w["text"], "x0": w["x0"],
-                                  "top": w["top"], "page": pg_num})
+                all_words.append({
+                    "text": w["text"],
+                    "x0":   w["x0"],
+                    "top":  w["top"],
+                    "page": pg_num,
+                })
     return all_words
 
-def get_all_chars(pdf_path):
-    all_chars = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for pg_num, page in enumerate(pdf.pages, 1):
-            for c in page.chars:
-                all_chars.append({"text": c["text"], "x0": c["x0"],
-                                  "width": c["width"], "top": c["top"], "page": pg_num})
-    return all_chars
-
-def chars_to_text(chars, gap_threshold=2.0):
-    if not chars:
-        return ""
-    chars = sorted(chars, key=lambda c: c["x0"])
-    result = chars[0]["text"]
-    for i in range(1, len(chars)):
-        prev_end = chars[i-1]["x0"] + chars[i-1]["width"]
-        if chars[i]["x0"] - prev_end > gap_threshold:
-            result += " "
-        result += chars[i]["text"]
-    return result.strip()
 
 def find_value_near_label(words, label_pattern, value_pattern=r".+"):
+    """Label ke right ya neeche value dhundta hai."""
     label_re = re.compile(label_pattern, re.IGNORECASE)
     value_re = re.compile(r"^" + value_pattern + r"$", re.IGNORECASE)
+
     for w in words:
         if label_re.search(w["text"]):
             lpage, ltop = w["page"], w["top"]
-            same = sorted([x for x in words if x["page"] == lpage
-                           and abs(x["top"] - ltop) <= 5
-                           and x["x0"] > w["x0"] + 5
-                           and not label_re.search(x["text"])], key=lambda x: x["x0"])
+
+            same = sorted(
+                [x for x in words
+                 if x["page"] == lpage
+                 and abs(x["top"] - ltop) <= 5
+                 and x["x0"] > w["x0"] + 5
+                 and not label_re.search(x["text"])],
+                key=lambda x: x["x0"]
+            )
             for x in same:
                 if value_re.match(x["text"]):
                     return x["text"].strip()
+
             below = [x for x in words if x["page"] == lpage and 0 < x["top"] - ltop <= 18]
             if below:
                 min_top = min(x["top"] for x in below)
-                for x in sorted([x for x in below if abs(x["top"] - min_top) <= 3],
-                                 key=lambda x: x["x0"]):
+                for x in sorted(
+                    [x for x in below if abs(x["top"] - min_top) <= 3],
+                    key=lambda x: x["x0"]
+                ):
                     if value_re.match(x["text"]):
                         return x["text"].strip()
     return ""
 
+
 def extract_csb_plumber(words):
+    """
+    CSB Number 2 rows mein hota hai:
+      Row 1: CSBNumber:  CSBV_DEL_2026-2027_14
+      Row 2:             06_16734
+    Joined: CSBV_DEL_2026-2027_14_06_16734
+    """
     for w in words:
         if re.search(r"CSBNumber:", w["text"], re.IGNORECASE):
             lpage, ltop = w["page"], w["top"]
-            same = sorted([x for x in words if x["page"] == lpage
-                           and abs(x["top"] - ltop) <= 5 and x["x0"] > w["x0"] + 5],
-                          key=lambda x: x["x0"])
-            part1 = next((x["text"] for x in same
-                          if re.match(r"CSBV_", x["text"], re.IGNORECASE)), "")
+            same = sorted(
+                [x for x in words if x["page"] == lpage
+                 and abs(x["top"] - ltop) <= 5
+                 and x["x0"] > w["x0"] + 5],
+                key=lambda x: x["x0"]
+            )
+            part1 = next(
+                (x["text"] for x in same if re.match(r"CSBV_", x["text"], re.IGNORECASE)), ""
+            )
             if not part1:
                 continue
             below = [x for x in words if x["page"] == lpage and 0 < x["top"] - ltop <= 20]
             if below:
                 min_top = min(x["top"] for x in below)
-                for x in sorted([x for x in below if abs(x["top"] - min_top) <= 3],
-                                 key=lambda x: x["x0"]):
+                for x in sorted(
+                    [x for x in below if abs(x["top"] - min_top) <= 3],
+                    key=lambda x: x["x0"]
+                ):
                     if re.match(r"^\d{2}[_\-]\d+$", x["text"]):
                         return part1 + "_" + x["text"]
             return part1
     return ""
 
-def extract_name_from_chars(all_chars, words, label_pattern, y_tolerance=4):
-    label_re = re.compile(label_pattern, re.IGNORECASE)
-    for w in words:
-        if label_re.search(w["text"]):
-            lpage, ltop = w["page"], w["top"]
-            vwords = sorted([x for x in words if x["page"] == lpage
-                             and abs(x["top"] - ltop) <= 5 and x["x0"] > w["x0"] + 5
-                             and not label_re.search(x["text"])], key=lambda x: x["x0"])
-            if not vwords:
-                continue
-            vx = vwords[0]["x0"] - 1
-            row_chars = [c for c in all_chars if c["page"] == lpage
-                         and abs(c["top"] - ltop) <= y_tolerance and c["x0"] >= vx]
-            if row_chars:
-                return chars_to_text(row_chars)
-    return ""
 
 def extract_invoice_fields_plumber(words):
+    """
+    Invoice section layout:
+      Header row: InvoiceNumber:   InvoiceDate:   InvoiceValue(inINR):
+      Data row:   NL-102-26-27     13/06/2026     21523.32
+    """
     inv_num_lbl = inv_date_lbl = None
     for w in words:
         if re.match(r"InvoiceNumber:", w["text"], re.IGNORECASE):
             inv_num_lbl = w
         if re.match(r"InvoiceDate:", w["text"], re.IGNORECASE):
             inv_date_lbl = w
+
     result = {"Invoice Number": "", "Invoice Date": ""}
     if not inv_num_lbl:
         return result
+
     lpage, ltop = inv_num_lbl["page"], inv_num_lbl["top"]
     below = [x for x in words if x["page"] == lpage and 0 < x["top"] - ltop <= 20]
     if not below:
         return result
+
     min_top  = min(x["top"] for x in below)
-    data_row = sorted([x for x in below if abs(x["top"] - min_top) <= 3], key=lambda x: x["x0"])
+    data_row = sorted(
+        [x for x in below if abs(x["top"] - min_top) <= 3],
+        key=lambda x: x["x0"]
+    )
+
     for x in data_row:
         if re.match(r"[A-Za-z][A-Za-z0-9\-\/\.]+", x["text"]) and abs(x["x0"] - inv_num_lbl["x0"]) < 80:
             result["Invoice Number"] = x["text"].strip()
             break
+
     if inv_date_lbl:
         for x in data_row:
             if re.match(r"\d{2}/\d{2}/\d{4}", x["text"]) and abs(x["x0"] - inv_date_lbl["x0"]) < 80:
                 result["Invoice Date"] = x["text"].strip()
                 break
+
     return result
 
-def extract_all_items_plumber(all_chars, words):
-    """
-    BUG FIX: pehle yeh function plain word-join (" ".join(...)) use karta tha,
-    jisse PDF-merged words jaise 'HANDMADE100COTTONRUG' bina space ke aate the.
-    Ab character-gap detection (chars_to_text) use karte hain — same logic jo
-    single-item extract_name_from_chars() me use hoti hai — taaki goods
-    description sahi se spaced niklein, multi-item bills ke liye bhi.
-    """
-    goods_list, taxval_list = [], []
+
+def extract_all_items_plumber(words):
+    """Multiple item rows: Goods Description + Total Taxable Value."""
+    goods_list = []
+    taxval_list = []
+
     goods_re  = re.compile(r"GoodsDescription:", re.IGNORECASE)
     taxval_re = re.compile(r"TotalTaxableValue:", re.IGNORECASE)
-    seen_taxval_positions = set()
 
     for w in words:
         lpage, ltop = w["page"], w["top"]
-
         if goods_re.search(w["text"]):
-            vwords = sorted([x for x in words if x["page"] == lpage
-                             and abs(x["top"] - ltop) <= 5 and x["x0"] > w["x0"] + 5
-                             and not goods_re.search(x["text"])], key=lambda x: x["x0"])
-            if vwords:
-                vx = vwords[0]["x0"] - 1
-                row_chars = [c for c in all_chars if c["page"] == lpage
-                             and abs(c["top"] - ltop) <= 4 and c["x0"] >= vx]
-                val = chars_to_text(row_chars) if row_chars else ""
-                if val:
-                    goods_list.append(val)
-
-        if taxval_re.search(w["text"]) and (lpage, round(ltop)) not in seen_taxval_positions:
-            seen_taxval_positions.add((lpage, round(ltop)))
-            vwords = sorted([x for x in words if x["page"] == lpage
-                             and abs(x["top"] - ltop) <= 5 and x["x0"] > w["x0"] + 5
-                             and not taxval_re.search(x["text"])], key=lambda x: x["x0"])
-            val_re = re.compile(r"^[\d,\.]+$")
-            val = next((x["text"].strip() for x in vwords if val_re.match(x["text"])), "")
+            same = sorted(
+                [x for x in words if x["page"] == lpage
+                 and abs(x["top"] - ltop) <= 5
+                 and x["x0"] > w["x0"] + 5],
+                key=lambda x: x["x0"]
+            )
+            val = " ".join(x["text"] for x in same).strip()
             if val:
+                goods_list.append(val)
+
+        if taxval_re.search(w["text"]):
+            val = find_value_near_label(words, r"TotalTaxableValue:", r"[\d,\.]+")
+            if val and val not in taxval_list:
                 taxval_list.append(val)
 
     n = max(len(goods_list), len(taxval_list), 1)
-    return [(goods_list[i] if i < len(goods_list) else "",
-             taxval_list[i] if i < len(taxval_list) else "") for i in range(n)]
+    return [
+        (goods_list[i] if i < len(goods_list) else "",
+         taxval_list[i] if i < len(taxval_list) else "")
+        for i in range(n)
+    ]
 
-def has_text_layer(pdf_path, min_chars=50):
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            total = sum(len(page.extract_text() or "") for page in pdf.pages[:3])
-        return total >= min_chars
-    except Exception:
-        return False
 
 def parse_with_plumber(pdf_path):
-    words     = get_all_words(pdf_path)
-    all_chars = get_all_chars(pdf_path)
-    inv   = extract_invoice_fields_plumber(words)
-    items = extract_all_items_plumber(all_chars, words)
-    base  = {
+    """pdfplumber se saare fields extract karta hai."""
+    words = get_all_words(pdf_path)
+
+    inv = extract_invoice_fields_plumber(words)
+    items = extract_all_items_plumber(words)
+
+    base = {
         "CSB Number":             extract_csb_plumber(words),
-        "Name of the Consignee":  extract_name_from_chars(all_chars, words, r"NameoftheConsignee:"),
-        "Filing Date":            find_value_near_label(words, r"FillingDate:",         r"\d{2}/\d{2}/\d{4}"),
-        "HAWB Number":            find_value_near_label(words, r"HAWBNumber:",          r"[A-Z0-9]+"),
-        "EGM Number":             find_value_near_label(words, r"EGMNumber:",           r"\d+"),
-        "EGM Date":               find_value_near_label(words, r"EGMDate:",             r"\d{2}/\d{2}/\d{4}"),
+        "Filing Date":            find_value_near_label(words, r"FillingDate:",          r"\d{2}/\d{2}/\d{4}"),
+        "HAWB Number":            find_value_near_label(words, r"HAWBNumber:",           r"[A-Z0-9]+"),
+        "EGM Number":             find_value_near_label(words, r"EGMNumber:",            r"\d+"),
+        "EGM Date":               find_value_near_label(words, r"EGMDate:",              r"\d{2}/\d{2}/\d{4}"),
         "Invoice Number":         inv["Invoice Number"],
         "Invoice Date":           inv["Invoice Date"],
         "Taxable Value Currency": find_value_near_label(words, r"TaxableValueCurrency:", r"[A-Z]{3}"),
@@ -862,465 +773,387 @@ def parse_with_plumber(pdf_path):
     }
     return base, items
 
-def parse_with_ocr(pdf_path):
-    doc   = fitz.open(pdf_path)
+
+# ── pytesseract — FALLBACK METHOD (scanned / image-only PDFs) ──────────────
+
+def ocr_pdf_text(pdf_path):
+    """PyMuPDF + Tesseract se full text extract karta hai."""
+    doc = fitz.open(pdf_path)
     pages = []
     for page in doc:
-        pix  = page.get_pixmap(matrix=fitz.Matrix(3, 3))
-        img  = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        pages.append(pytesseract.image_to_string(img, config="--psm 6"))
+        pix = page.get_pixmap(matrix=fitz.Matrix(DPI_SCALE, DPI_SCALE))
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        pages.append(pytesseract.image_to_string(img, config=OCR_CONFIG))
     doc.close()
-    text = "\n".join(pages)
+    return "\n".join(pages)
 
-    def rx(pattern, group=1, flags=re.IGNORECASE):
-        m = re.search(pattern, text, flags)
-        return m.group(group).strip() if m else ""
 
-    egm_no = rx(r"EGM\s*Number[:\s|]*([\d]+)")
-    egm_dt = rx(r"EGM\s*Date[:\s|]*([\d]{2}/[\d]{2}/[\d]{4})")
+def extract_csb_ocr(text):
+    m = re.search(r"CSB\s*Number[:\s|]+.*?\n\s*([\d\s_]+)", text, re.IGNORECASE)
+    if m:
+        return re.sub(r"\s+", "_", m.group(1).strip()).strip("_")
+    return ""
 
-    m_inv = re.search(
-        r"Invoice\s*Value\s*\(in\s*INR\)[^\n]*\n\s*([A-Z]{2,4}-[\d\s/\\\-]+?)\s+([\d]{2}/[\d]{2}/[\d]{4})",
-        text, re.IGNORECASE | re.DOTALL)
-    inv_no = re.sub(r"\s+", "", re.sub(r"\s*/\s*$", "7", m_inv.group(1).strip())) if m_inv else \
-             rx(r"Invoice\s*Number[:\s|]+([A-Z]{2,4}-[\d\-]+)")
-    inv_dt = m_inv.group(2).strip() if m_inv else rx(r"Invoice\s*Date[:\s|]+([\d]{2}/[\d]{2}/[\d]{4})")
+def extract_filling_date_ocr(text):
+    m = re.search(r"Filling\s*Date[:\s|]+([\d]{2}/[\d]{2}/[\d]{4})", text, re.IGNORECASE)
+    return m.group(1).strip() if m else ""
 
+def extract_hawb_ocr(text):
+    m = re.search(r"HAWB\s*Number[:\s|]+([1I][ZG0-9A-Z/\-]+)", text, re.IGNORECASE)
+    if m:
+        val = re.sub(r"[^A-Z0-9]", "", m.group(1).upper())
+        return val[:18]
+    return ""
+
+def extract_egm_ocr(text):
+    m_no = re.search(r"EGM\s*Number[:\s|]*([\d]+)", text, re.IGNORECASE)
+    m_dt = re.search(r"EGM\s*Date[:\s|]*([\d]{2}/[\d]{2}/[\d]{4})", text, re.IGNORECASE)
+    return (
+        m_no.group(1).strip() if m_no else "",
+        m_dt.group(1).strip() if m_dt else "",
+    )
+
+def extract_invoice_ocr(text):
+    m = re.search(
+        r"Invoice\s*Value\s*\(in\s*INR\)[^\n]*\n\s*"
+        r"([A-Z]{2,4}-[\d\s/\\\-]+?)\s+([\d]{2}/[\d]{2}/[\d]{4})",
+        text, re.IGNORECASE | re.DOTALL
+    )
+    if m:
+        inv_no = re.sub(r"\s*/\s*$", "7", m.group(1).strip())
+        inv_no = re.sub(r"\s+", "", inv_no)
+        inv_no = re.sub(r"-+", "-", inv_no)
+        return inv_no, m.group(2).strip()
+
+    m_no = re.search(r"Invoice\s*Number[:\s|]+([A-Z]{2,4}-[\d\-]+)", text, re.IGNORECASE)
+    m_dt = re.search(r"Invoice\s*Date[:\s|]+([\d]{2}/[\d]{2}/[\d]{4})", text, re.IGNORECASE)
+    return (
+        m_no.group(1).strip() if m_no else "",
+        m_dt.group(1).strip() if m_dt else "",
+    )
+
+def extract_fob_inr_ocr(text):
+    m = re.search(r"FOB\s*Value\s*\(In\s*INR\)[:\s|]*([\d,]+\.?\d*)", text, re.IGNORECASE)
+    return m.group(1).replace(",", "").strip() if m else ""
+
+def extract_exchange_rate_ocr(text):
+    m = re.search(r"FOB\s*Exchange\s*Rate[^|]*\|\s*([\d.]+)", text)
+    if not m:
+        m = re.search(r"FOB\s*Exchange\s*Rate[^\d\n]*([\d.]+)", text, re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+def extract_currency_ocr(text):
+    m = re.search(r"FOB\s*Currency[^|]*\|\s*([A-Z]{3})", text)
+    return m.group(1).strip() if m else "USD"
+
+def extract_items_ocr(text):
     goods  = [re.sub(r"\s+", " ", g).strip()
               for g in re.findall(r"Goods\s*Description[:\s|]+([^\n]{3,80})", text, re.IGNORECASE)]
     taxval = [v.replace(",", "").strip()
               for v in re.findall(r"Total\s*Taxable\s*Value[:\s|]+([\d.,]+)", text, re.IGNORECASE)]
     n = max(len(goods), len(taxval), 1)
-    items = [(goods[i] if i < len(goods) else "",
-              taxval[i] if i < len(taxval) else "") for i in range(n)]
+    return [(goods[i] if i < len(goods) else "",
+             taxval[i] if i < len(taxval) else "") for i in range(n)]
+
+
+def parse_with_ocr(pdf_path):
+    """OCR fallback – scanned PDFs ke liye."""
+    text = ocr_pdf_text(pdf_path)
+    egm_no, egm_dt   = extract_egm_ocr(text)
+    inv_no, inv_dt   = extract_invoice_ocr(text)
+    items            = extract_items_ocr(text)
 
     base = {
-        "CSB Number":             rx(r"CSB\s*Number[:\s|]+.*?\n\s*([\d\s_]+)"),
-        "Name of the Consignee":  rx(r"Name\s*of\s*the\s*Consignee[:\s|]+([^\n]{3,80})"),
-        "Filing Date":            rx(r"Filling\s*Date[:\s|]+([\d]{2}/[\d]{2}/[\d]{4})"),
-        "HAWB Number":            rx(r"HAWB\s*Number[:\s|]+([1I][ZG0-9A-Z/\-]+)"),
+        "CSB Number":             extract_csb_ocr(text),
+        "Filing Date":            extract_filling_date_ocr(text),
+        "HAWB Number":            extract_hawb_ocr(text),
         "EGM Number":             egm_no,
         "EGM Date":               egm_dt,
         "Invoice Number":         inv_no,
         "Invoice Date":           inv_dt,
-        "Taxable Value Currency": rx(r"FOB\s*Currency[^|]*\|\s*([A-Z]{3})") or "USD",
-        "FOB Value (In INR)":     rx(r"FOB\s*Value\s*\(In\s*INR\)[:\s|]*([\d,]+\.?\d*)").replace(",",""),
-        "Exchange Rate":          rx(r"(?<!FOB)(?<!FOB )Exchange\s*Rate[:\s|]*([\d.]+)") or
-                                  rx(r"FOB\s*Exchange\s*Rate[^|]*\|\s*([\d.]+)") or
-                                  rx(r"FOB\s*Exchange\s*Rate[^\d\n]*([\d.]+)"),
+        "Taxable Value Currency": extract_currency_ocr(text),
+        "FOB Value (In INR)":     extract_fob_inr_ocr(text),
+        "Exchange Rate":          extract_exchange_rate_ocr(text),
     }
     return base, items
 
+
+def has_text_layer(pdf_path, min_chars=50):
+    """
+    pdfplumber se check karta hai ki PDF mein actual text hai ya nahi.
+    Scanned PDFs mein text layer nahi hota.
+    """
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            total = sum(
+                len(page.extract_text() or "")
+                for page in pdf.pages[:3]
+            )
+        return total >= min_chars
+    except Exception:
+        return False
+
+
 def parse_bill(pdf_path):
-    if has_text_layer(pdf_path):
-        base, items = parse_with_plumber(pdf_path)
-        method = "plumber"
-    elif OCR_AVAILABLE:
-        base, items = parse_with_ocr(pdf_path)
-        method = "ocr"
-    else:
-        raise RuntimeError("PDF mein text layer nahi + OCR install nahi hai.")
+    """
+    Auto-detect karke correct method choose karta hai:
+      1. pdfplumber  — text layer wale PDFs (fast, accurate)
+      2. pytesseract — scanned / image PDFs  (slow, needs Tesseract)
+    Returns (rows, method).
+    """
     fname = os.path.basename(pdf_path)
-    rows  = [{"File Name": fname, **base,
-               "Goods Description":   g,
-               "Total Taxable Value": t} for g, t in items]
+
+    if has_text_layer(pdf_path):
+        method = "plumber"
+        base, items = parse_with_plumber(pdf_path)
+    elif OCR_AVAILABLE:
+        method = "ocr"
+        base, items = parse_with_ocr(pdf_path)
+    else:
+        raise RuntimeError(
+            "PDF mein text layer nahi hai aur OCR libraries install nahi hain.\n"
+            "Run: pip install pymupdf pytesseract pillow"
+        )
+
+    rows = []
+    for goods, taxval in items:
+        row = {"File Name": fname, **base,
+               "Goods Description":   goods,
+               "Total Taxable Value": taxval}
+        rows.append(row)
+
     return rows, method
 
-def build_excel(all_rows, output_path):
-    wb  = Workbook()
-    ws  = wb.active
-    ws.title = "Shipping Bills"
-    ws.sheet_view.showGridLines = False
-    thin     = Side(style="thin", color="BBBBBB")
-    BDR      = Border(left=thin, right=thin, top=thin, bottom=thin)
-    HDR_FILL = PatternFill("solid", fgColor="1F3864")
-    ALT_FILL = PatternFill("solid", fgColor="EBF3FB")
-    WHT_FILL = PatternFill("solid", fgColor="FFFFFF")
-    HDR_FONT = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-    DAT_FONT = Font(name="Arial", size=9)
-    CTR      = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    LFT      = Alignment(horizontal="left",   vertical="center", wrap_text=True)
-    WIDTHS   = {
-        "File Name": 24, "CSB Number": 28, "Name of the Consignee": 28,
-        "Filing Date": 13, "HAWB Number": 22, "EGM Number": 13, "EGM Date": 13,
-        "Invoice Number": 17, "Invoice Date": 13, "Goods Description": 35,
-        "Total Taxable Value": 16, "Taxable Value Currency": 18,
-        "FOB Value (In INR)": 16, "Exchange Rate": 13,
-    }
-    LEFT_COLS = {"File Name", "Goods Description", "Name of the Consignee"}
-    ws.row_dimensions[1].height = 32
-    for ci, col in enumerate(COLUMNS, 1):
-        c = ws.cell(row=1, column=ci, value=col)
-        c.font = HDR_FONT; c.fill = HDR_FILL; c.alignment = CTR; c.border = BDR
-        ws.column_dimensions[get_column_letter(ci)].width = WIDTHS.get(col, 15)
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}1"
-    for ri, row in enumerate(all_rows, 2):
-        fill = ALT_FILL if ri % 2 == 0 else WHT_FILL
-        ws.row_dimensions[ri].height = 18
-        for ci, col in enumerate(COLUMNS, 1):
-            val = row.get(col, "")
-            if col in ("Total Taxable Value", "FOB Value (In INR)", "Exchange Rate"):
-                try: val = float(str(val).replace(",", ""))
-                except: pass
-            c = ws.cell(row=ri, column=ci, value=val)
-            c.font = DAT_FONT; c.fill = fill; c.border = BDR
-            c.alignment = LFT if col in LEFT_COLS else CTR
-    wb.save(output_path)
-
 # ══════════════════════════════════════════════════════════════════════════════
-#  MAIN EXTRACTOR WINDOW  (shown after login)
+#  PROCESSING WINDOW
 # ══════════════════════════════════════════════════════════════════════════════
-class ExtractorWindow(ctk.CTkFrame):
+class ProcessingWindow(ctk.CTkFrame):
     def __init__(self, master, username):
         super().__init__(master, fg_color=DARK_BG)
-        self.username    = username
-        self.bill_files  = []          # added shipping bill PDFs
-        self.output_file = tk.StringVar(value="")
-        self.running     = False
-        self._monitoring = True
+        self.username = username
+        self.selected_files = []
         self._build()
 
     def _build(self):
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
-        # ── Top bar ──────────────────────────────────────────────────────────
-        topbar = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, height=56)
-        topbar.grid(row=0, column=0, sticky="ew")
-        topbar.grid_columnconfigure(1, weight=1)
+        # ── Header ────────────────────────────────────────────────────────────
+        header = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=0, height=56)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
 
-        logo_ctk = load_ctk_logo(size=(110, 44))
-        if logo_ctk:
-            ctk.CTkLabel(topbar, image=logo_ctk, text="").grid(row=0, column=0, padx=16, pady=6)
-        else:
-            ctk.CTkLabel(topbar, text="RDx Solution", font=("Georgia", 14, "bold"),
-                         text_color=GOLD_LIGHT).grid(row=0, column=0, padx=16)
+        ctk.CTkLabel(header, text="RDX Extractor Control Hub", font=("Segoe UI", 14, "bold"), text_color=GOLD_LIGHT).grid(row=0, column=0, padx=20, sticky="w")
+        ctk.CTkButton(header, text="⬅ Back to Dashboard", width=140, height=30, fg_color=GOLD_DARK, hover_color=GOLD_MID, command=self._back).grid(row=0, column=1, padx=20)
 
-        ctk.CTkLabel(topbar, text="CSB-V Shipping Bill Extractor — Processing Window",
-                     font=("Segoe UI", 13, "bold"),
-                     text_color=GOLD_MID).grid(row=0, column=1, sticky="w")
+        # ── Control Operations Pane ───────────────────────────────────────────
+        ops = ctk.CTkFrame(self, fg_color="transparent")
+        ops.grid(row=1, column=0, sticky="ew", padx=20, pady=15)
+        
+        self.add_btn = ctk.CTkButton(ops, text="📂 Add Shipping Bills (PDF)", font=("Segoe UI", 12, "bold"), fg_color=GOLD_MID, text_color=DARK_BG, hover_color=GOLD_LIGHT, command=self._add_files)
+        self.add_btn.pack(side="left", padx=5)
+        
+        self.clear_btn = ctk.CTkButton(ops, text="🗑 Clear List", font=("Segoe UI", 12), fg_color="#3A2E20", text_color=WHITE, hover_color=RED_ERR, command=self._clear_list)
+        self.clear_btn.pack(side="left", padx=5)
 
-        # Back + User + logout
-        user_frame = ctk.CTkFrame(topbar, fg_color="transparent")
-        user_frame.grid(row=0, column=2, padx=16)
-        ctk.CTkButton(user_frame, text="⬅ Dashboard", width=100, height=28,
-                      fg_color=GOLD_DARK, hover_color=GOLD_MID,
-                      text_color=WHITE, font=("Segoe UI", 9),
-                      command=self._back_to_dashboard).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(user_frame, text=f"👤 {self.username}",
-                     font=("Segoe UI", 10), text_color=GREY_TEXT).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(user_frame, text="Logout", width=70, height=28,
-                      fg_color=GOLD_DARK, hover_color=RED_ERR,
-                      text_color=WHITE, font=("Segoe UI", 9),
-                      command=self._logout).pack(side="left")
+        self.run_btn = ctk.CTkButton(ops, text="⚡ Run Extraction Matrix", font=("Segoe UI", 12, "bold"), fg_color=GREEN_OK, text_color=WHITE, hover_color="#66C266", command=self._run_extraction)
+        self.run_btn.pack(side="right", padx=5)
 
-        # ── Live datetime strip ───────────────────────────────────────────────
-        self.dt_bar = ctk.CTkLabel(self, text="", font=("Consolas", 10),
-                                   text_color=GOLD_DARK, fg_color=DARK_BG)
-        self.dt_bar.grid(row=1, column=0, sticky="e", padx=20, pady=(4, 0))
-        self._tick()
+        # ── Dynamic Progress Indicator ────────────────────────────────────────
+        self.prog_bar = ctk.CTkProgressBar(self, fg_color=CARD_BG, progress_color=GOLD_MID)
+        self.prog_bar.grid(row=3, column=0, sticky="ew", padx=25, pady=(5, 5))
+        self.prog_bar.set(0)
 
-        # ── CPU / RAM monitor (round dial watches) ─────────────────────────────
-        mon = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=10)
-        mon.grid(row=2, column=0, padx=30, pady=(16, 0), sticky="ew")
-        ctk.CTkLabel(mon, text="🖥  System Monitor", font=("Segoe UI", 11, "bold"),
-                     text_color=GOLD_MID).pack(pady=(10, 2))
-        gframe = ctk.CTkFrame(mon, fg_color="transparent")
-        gframe.pack(pady=(0, 10))
-        self.cpu_gauge = DialGauge(gframe, label="CPU", size=110)
-        self.cpu_gauge.grid(row=0, column=0, padx=16)
-        self.ram_gauge = DialGauge(gframe, label="RAM", size=110)
-        self.ram_gauge.grid(row=0, column=1, padx=16)
-        self._update_gauges()
-
-        # ── Card: Add shipping bills + output ───────────────────────────────────
-        card = ctk.CTkFrame(self, fg_color=CARD_BG, corner_radius=10)
-        card.grid(row=3, column=0, padx=30, pady=16, sticky="ew")
-        card.grid_columnconfigure(0, weight=1)
-
-        btn_row = ctk.CTkFrame(card, fg_color="transparent")
-        btn_row.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 6))
-        btn_row.grid_columnconfigure(3, weight=1)
-
-        ctk.CTkButton(btn_row, text="➕  Add Shipping Bill(s)", height=36,
-                      fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG,
-                      font=("Segoe UI", 11, "bold"),
-                      command=self._add_files).grid(row=0, column=0, padx=(0, 8))
-        ctk.CTkButton(btn_row, text="🗑  Remove Selected", height=36,
-                      fg_color=GOLD_DARK, hover_color=RED_ERR, text_color=WHITE,
-                      command=self._remove_selected).grid(row=0, column=1, padx=(0, 8))
-        ctk.CTkButton(btn_row, text="✖  Clear All", height=36,
-                      fg_color=GOLD_DARK, hover_color=RED_ERR, text_color=WHITE,
-                      command=self._clear_files).grid(row=0, column=2, padx=(0, 8))
-        self.count_lbl = ctk.CTkLabel(btn_row, text="0 shipping bill(s) added",
-                                      font=("Segoe UI", 10), text_color=GREY_TEXT)
-        self.count_lbl.grid(row=0, column=3, sticky="e")
-
-        # Listbox for added shipping bills
-        list_wrap = ctk.CTkFrame(card, fg_color=DARK_BG, corner_radius=6,
-                                  border_color=GOLD_DARK, border_width=1)
-        list_wrap.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
-        self.files_list = tk.Listbox(list_wrap, height=6, bg=DARK_BG, fg=GOLD_SHINE,
-                                     selectmode="extended", activestyle="none",
-                                     font=("Consolas", 9), bd=0, highlightthickness=0,
-                                     selectbackground=GOLD_DARK)
-        self.files_list.pack(fill="x", padx=6, pady=6)
-
-        # Output Excel file
-        out_row = ctk.CTkFrame(card, fg_color="transparent")
-        out_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
-        out_row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(out_row, text="💾  Save Excel As", font=("Segoe UI", 11),
-                     text_color=GREY_TEXT).grid(row=0, column=0, padx=(0, 10))
-        ctk.CTkEntry(out_row, textvariable=self.output_file, height=36,
-                     fg_color=DARK_BG, border_color=GOLD_DARK,
-                     text_color=WHITE).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ctk.CTkButton(out_row, text="Browse", width=80, height=36,
-                      fg_color=GOLD_DARK, hover_color=GOLD_MID, text_color=WHITE,
-                      command=self._browse_output).grid(row=0, column=2)
-
-        # ── Process button ───────────────────────────────────────────────────────
-        self.run_btn = ctk.CTkButton(
-            self, text="▶  Process Shipping Bills",
-            height=48, corner_radius=8,
-            fg_color=GOLD_MID, hover_color=GOLD_DARK,
-            text_color=DARK_BG, font=("Segoe UI", 13, "bold"),
-            command=self._start, state="disabled"
-        )
-        self.run_btn.grid(row=4, column=0, padx=30, pady=(0, 10), sticky="ew")
-
-        # ── Progress bar ──────────────────────────────────────────────────────
-        self.progress = ctk.CTkProgressBar(self, fg_color=CARD_BG,
-                                           progress_color=GOLD_MID, height=8)
-        self.progress.set(0)
-        self.progress.grid(row=5, column=0, padx=30, sticky="ew")
-
-        self.status_lbl = ctk.CTkLabel(self, text="Pehle shipping bill PDF add karo.",
-                                       font=("Segoe UI", 10), text_color=GREY_TEXT)
-        self.status_lbl.grid(row=6, column=0, pady=(4, 0))
-
-        # ── Log box ───────────────────────────────────────────────────────────
-        self.log_box = ctk.CTkTextbox(self, height=180, fg_color=CARD_BG,
-                                      text_color=GOLD_SHINE,
-                                      font=("Consolas", 10), border_color=GOLD_DARK,
-                                      border_width=1, corner_radius=6)
-        self.log_box.grid(row=7, column=0, padx=30, pady=(10, 20), sticky="ew")
-        self.log_box.configure(state="disabled")
-
-    # ── System monitor ──────────────────────────────────────────────────────
-    def _update_gauges(self):
-        if not self._monitoring:
-            return
-        try:
-            if PSUTIL_AVAILABLE:
-                cpu = psutil.cpu_percent(interval=None)
-                ram = psutil.virtual_memory().percent
-            else:
-                cpu = ram = 0
-            self.cpu_gauge.set_value(cpu)
-            self.ram_gauge.set_value(ram)
-            self.after(1200, self._update_gauges)
-        except Exception:
-            pass
-
-    def _tick(self):
-        now = datetime.now()
-        self.dt_bar.configure(
-            text=f"{now.strftime('%A')}  {now.strftime('%d %b %Y')}  {now.strftime('%I:%M:%S %p')}"
-        )
-        self.after(1000, self._tick)
-
-    # ── Shipping bill add / remove ─────────────────────────────────────────
-    def _add_files(self):
-        paths = filedialog.askopenfilenames(
-            title="Shipping Bill PDF(s) select karo",
-            filetypes=[("PDF files", "*.pdf")])
-        if not paths:
-            return
-        added = 0
-        for p in paths:
-            if p not in self.bill_files:
-                self.bill_files.append(p)
-                self.files_list.insert("end", os.path.basename(p))
-                added += 1
-        if added and not self.output_file.get().strip():
-            default_dir = os.path.dirname(self.bill_files[0])
-            self.output_file.set(os.path.join(default_dir, "shipping_bills_output.xlsx"))
-        self._refresh_count()
-
-    def _remove_selected(self):
-        sel = list(self.files_list.curselection())
-        for i in reversed(sel):
-            self.files_list.delete(i)
-            del self.bill_files[i]
-        self._refresh_count()
-
-    def _clear_files(self):
-        self.files_list.delete(0, "end")
-        self.bill_files.clear()
-        self._refresh_count()
-
-    def _refresh_count(self):
-        n = len(self.bill_files)
-        self.count_lbl.configure(text=f"{n} shipping bill(s) added")
-        self.run_btn.configure(state=("normal" if n > 0 else "disabled"))
-        self.status_lbl.configure(
-            text="Process button dabao." if n > 0 else "Pehle shipping bill PDF add karo.")
-
-    def _browse_output(self):
-        f = filedialog.asksaveasfilename(
-            title="Output Excel file", defaultextension=".xlsx",
-            filetypes=[("Excel files", "*.xlsx")])
-        if f:
-            self.output_file.set(f)
+        # ── Informative Output Area ───────────────────────────────────────────
+        self.console_frame = ctk.CTkFrame(self, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1)
+        self.console_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=5)
+        
+        self.txt = tk.Text(self.console_frame, bg=CARD_BG, fg=CREAM, insertbackground=GOLD_LIGHT, font=("Consolas", 11), bd=0, highlightthickness=0)
+        self.txt.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        
+        scr = ctk.CTkScrollbar(self.console_frame, command=self.txt.yview)
+        scr.pack(side="right", fill="y")
+        self.txt.configure(yscrollcommand=scr.set)
+        
+        self._log("💡 RDX Solution Engine Standby Mode. Upload Courier Bills to start processing pipeline.\n")
 
     def _log(self, msg):
-        self.log_box.configure(state="normal")
-        self.log_box.insert("end", msg + "\n")
-        self.log_box.see("end")
-        self.log_box.configure(state="disabled")
+        self.txt.insert(tk.END, msg)
+        self.txt.see(tk.END)
 
-    # ── Processing ───────────────────────────────────────────────────────────
-    def _start(self):
-        if self.running:
-            return
-        if not self.bill_files:
-            messagebox.showerror("Error", "Pehle shipping bill PDF add karo.")
-            return
-        output = self.output_file.get().strip()
-        if not output:
-            messagebox.showerror("Error", "Output Excel file path enter karo.")
-            return
-        self.running = True
-        self.run_btn.configure(state="disabled", text="⏳  Processing…")
-        self.log_box.configure(state="normal"); self.log_box.delete("1.0", "end")
-        self.log_box.configure(state="disabled")
-        threading.Thread(target=self._run_extraction,
-                         args=(list(self.bill_files), output), daemon=True).start()
+    def _add_files(self):
+        fps = filedialog.askopenfilenames(filetypes=[("Courier Manifest PDF", "*.pdf")])
+        if fps:
+            for f in fps:
+                if f not in self.selected_files:
+                    self.selected_files.append(f)
+                    self._log(f"📌 Loaded Manifest: {os.path.basename(f)}\n")
 
-    def _run_extraction(self, pdf_files, output):
-        all_rows = []
-        errors = []
-        n = len(pdf_files)
-        for i, pdf_path in enumerate(pdf_files):
-            fname = os.path.basename(pdf_path)
-            self.after(0, lambda f=fname: self.status_lbl.configure(text=f"Processing: {f}"))
-            self.after(0, lambda p=(i/n): self.progress.set(p))
-            try:
-                rows, method = parse_bill(pdf_path)
-                all_rows.extend(rows)
-                self.after(0, lambda f=fname, r=len(rows), m=method:
-                           self._log(f"✅ {f}  →  {r} row(s) [{m}]"))
-            except Exception as e:
-                errors.append((fname, str(e)))
-                self.after(0, lambda f=fname, err=str(e): self._log(f"❌ {f}: {err}"))
+    def _clear_list(self):
+        self.selected_files.clear()
+        self.txt.delete("1.0", tk.END)
+        self.prog_bar.set(0)
+        self._log("💡 System Cache Cleared. Queue Ready.\n")
 
-        if not all_rows:
-            self.after(0, lambda: self._done(False, "Koi data extract nahi hua.", 0, errors))
-            return
-
-        df = pd.DataFrame(all_rows)
-        ordered = [c for c in COLUMNS if c in df.columns]
-        df = df[ordered]
-        build_excel(df.to_dict("records"), output)
-
-        record_run(len(pdf_files), len(df), output)
-
-        self.after(0, lambda: self.progress.set(1.0))
-        msg = f"Done! {len(df)} rows  |  Excel saved: {output}"
-        self.after(0, lambda: self._done(True, msg, len(df), errors))
-
-    def _done(self, success, msg, rows=0, errors=None):
-        self.running = False
-        self.run_btn.configure(state="normal", text="▶  Process Shipping Bills")
-        self.status_lbl.configure(
-            text=msg,
-            text_color=GREEN_OK if success else RED_ERR
-        )
-        if success:
-            self._log(f"\n{'═'*50}")
-            self._log(f"✅ DONE!  Total rows: {rows}")
-            if errors:
-                self._log(f"⚠  {len(errors)} file(s) mein error:")
-                for f, e in errors:
-                    self._log(f"   {f}: {e}")
-            self._log(f"{'═'*50}")
-            messagebox.showinfo("Extraction Complete! ✅", msg)
-        else:
-            self._log(f"❌ {msg}")
-            messagebox.showerror("Error", msg)
-
-    def _back_to_dashboard(self):
-        self._monitoring = False
+    def _back(self):
         self.master._show_dashboard(self.username)
 
-    def _logout(self):
-        self._monitoring = False
-        self.master._show_login()
+    def _run_extraction(self):
+        if not self.selected_files:
+            messagebox.showwarning("Empty Context", "Please load source shipping records (PDF format) first.")
+            return
+        self.add_btn.configure(state="disabled")
+        self.run_btn.configure(state="disabled")
+        self.clear_btn.configure(state="disabled")
+        
+        threading.Thread(target=self._proc_thread, daemon=True).start()
+
+    def _proc_thread(self):
+        all_rows = []
+        tot = len(self.selected_files)
+        
+        for idx, fp in enumerate(self.selected_files, 1):
+            fn = os.path.basename(fp)
+            self._log(f"⚡ Analyzing data architecture inside -> {fn}...\n")
+            try:
+                res, method = parse_bill(fp)
+                all_rows.extend(res)
+                self._log(f"   ↳ Extracted {len(res)} row(s) via [{method}] method.\n")
+            except Exception as e:
+                self._log(f"❌ Structural Failure parsing: {fn}. Details: {str(e)}\n")
+            self.prog_bar.set(idx / tot)
+            time.sleep(0.2)
+
+        if not all_rows:
+            self._log("⚠️ Process execution aborted: No structured shipping fields recovered.\n")
+            self._reset_buttons()
+            return
+
+        # Build highly customized & styled Excel ledger matrix
+        self._log("📊 Exporting normalized datasets into professional corporate ledger template...\n")
+        out_fp = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Workspace", "*.xlsx")])
+        if not out_fp:
+            out_fp = os.path.join(os.path.expanduser("~"), "Desktop", f"RDX_CSBV_Output_{int(time.time())}.xlsx")
+
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "CSB-V Extracted Data"
+            ws.views.sheetView[0].showGridLines = True
+
+            # Elite corporate design palette styling rules
+            hdr_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+            reg_font = Font(name="Segoe UI", size=10, color="000000")
+            hdr_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid") # Classic corporate dark navy
+            alt_fill = PatternFill(start_color="F2F5F8", end_color="F2F5F8", fill_type="solid") # Subtle cool grey alternate striping
+            
+            thin_border = Border(
+                left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
+                top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
+            )
+
+            # Write high-contrast column structures
+            ws.append(COLUMNS)
+            for col_idx in range(1, len(COLUMNS) + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = hdr_font
+                cell.fill = hdr_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = thin_border
+
+            # Render data records
+            for r_idx, data_dict in enumerate(all_rows, start=2):
+                row_data = [data_dict.get(c, "") for c in COLUMNS]
+                ws.append(row_data)
+                
+                is_alt = (r_idx % 2 == 0)
+                for col_idx in range(1, len(COLUMNS) + 1):
+                    cell = ws.cell(row=r_idx, column=col_idx)
+                    cell.font = reg_font
+                    cell.border = thin_border
+                    
+                    if is_alt:
+                        cell.fill = alt_fill
+                        
+                    # Custom programmatic alignment masks based on column data content
+                    cname = COLUMNS[col_idx - 1]
+                    if cname in ["Total Taxable Value", "FOB Value (In INR)", "Exchange Rate"]:
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                        cell.number_format = '#,##0.00'
+                    elif "Date" in cname or cname in ["CSB Number", "HAWB Number", "Invoice Number"]:
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                    else:
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+            ws.row_dimensions[1].height = 28
+            for r in range(2, len(all_rows) + 2):
+                ws.row_dimensions[r].height = 20
+
+            # Autofit layout calculation engine boundaries
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.value is not None:
+                        max_len = max(max_len, len(str(cell.value)))
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+            wb.save(out_fp)
+            record_run(tot, len(all_rows), out_fp)
+            self._log(f"💥 PIPELINE COMPLETE! Ledger compiled and securely written to:\n 👉 {out_fp}\n")
+            messagebox.showinfo("Pipeline Complete", f"Data matrices successfully compiled!\nProcessed: {tot} files\nExtracted: {len(all_rows)} records.")
+        except Exception as e:
+            self._log(f"❌ File I/O Error saving generated template layout: {str(e)}\n")
+            messagebox.showerror("Export Crash", f"Could not compile data array template sheet: {str(e)}")
+
+        self._reset_buttons()
+
+    def _reset_buttons(self):
+        self.add_btn.configure(state="normal")
+        self.run_btn.configure(state="normal")
+        self.clear_btn.configure(state="normal")
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ROOT APP CONTROLLER
+#  MAIN WINDOW APPLICATION ORCHESTRATOR
 # ══════════════════════════════════════════════════════════════════════════════
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("RDx Solution — CSB-V Extractor")
-        self.geometry("860x620")
-        self.minsize(760, 560)
+        self.title("RDX Solution — Courier Shipping Bill Data Extractor v3.4.2")
+        self.geometry("900x620")
         self.configure(fg_color=DARK_BG)
-
-        # Taskbar icon (logo)
-        try:
-            icon = load_logo(size=(32, 32))
-            if icon:
-                self.iconphoto(True, icon)
-        except Exception:
-            pass
+        self.resizable(False, False)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self._current_frame = None
+        self.current_frame = None
+        
+        # Deploy initial Flash splash frame sequence
+        self.withdraw()
+        splash = SplashScreen(self)
+        self.after(2800, lambda: self._terminate_splash(splash))
 
-        # Splash (non-blocking) → Login
-        self._show_splash()
+    def _terminate_splash(self, splash):
+        splash._failsafe_close()
+        self.deiconify()
+        self._show_login()
 
-    def _show_splash(self):
-        self._clear()
-        self.geometry("860x560")
-        frame = SplashScreen(self, on_done=self._show_login)
-        frame.grid(row=0, column=0, sticky="nsew")
-        self._current_frame = frame
-
-    def _clear(self):
-        if self._current_frame:
-            self._current_frame.destroy()
+    def _switch_frame(self, frame_class, *args, **kwargs):
+        if self.current_frame:
+            self.current_frame.destroy()
+        self.current_frame = frame_class(self, *args, **kwargs)
+        self.current_frame.grid(row=0, column=0, sticky="nsew")
 
     def _show_login(self):
-        self._clear()
-        self.geometry("860x560")
-        frame = LoginPage(self, on_login_success=self._show_dashboard)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.grid_columnconfigure(1, weight=1)
-        self._current_frame = frame
+        self._switch_frame(LoginPage, on_login_success=self._show_dashboard)
 
     def _show_dashboard(self, username):
-        self._clear()
-        self.geometry("900x700")
-        frame = Dashboard(self, username, on_open_processing=self._show_extractor)
-        frame.grid(row=0, column=0, sticky="nsew")
-        self._current_frame = frame
+        self._switch_frame(Dashboard, username=username, on_open_processing=self._show_processing)
 
-    def _show_extractor(self, username):
-        self._clear()
-        self.geometry("900x780")
-        frame = ExtractorWindow(self, username)
-        frame.grid(row=0, column=0, sticky="nsew")
-        self._current_frame = frame
+    def _show_processing(self, username):
+        self._switch_frame(ProcessingWindow, username=username)
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ENTRY POINT
-# ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     app = App()
     app.mainloop()
