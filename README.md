@@ -146,3 +146,11 @@ extend `updater.py` accordingly.
   corporate machines.
 - OCR fallback only kicks in for PDFs with no text layer, so normal
   digitally-generated CSB-V bills stay on the fast `pdfplumber` path.
+
+---
+
+## Contact Us
+
+- **Phone:** +91 9983000552
+- **Email:** rjgaju2018@gmail.com
+- **Instagram:** [@gaja_vibe](https://insta.com/@gaja_vibe)
