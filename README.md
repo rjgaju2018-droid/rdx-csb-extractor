@@ -115,6 +115,26 @@ rather prioritize raw startup speed over easy self-updating, switch
 folder — but then updates have to replace multiple files, so you'd need to
 extend `updater.py` accordingly.
 
+### New in this build
+
+- **Custom RDX icon everywhere** — `icon.ico` (generated from `logo.png`) is
+  now the `.exe` file icon **and** the running window's titlebar/taskbar
+  icon (replaces the default grey square Tk icon). Set via `--icon` in
+  `build.spec` at build time, and via `iconbitmap()` at runtime
+  (`set_window_icon()` in `rdx_csb_app.py`).
+- **Desktop + Start Menu shortcuts** — created automatically the first time
+  the packaged `.exe` runs (`ensure_shortcuts()`). No extra pip dependency;
+  it uses Windows' built-in `WScript.Shell` via a throwaway `.vbs` script.
+  If a shortcut already exists it's left alone; if missing, it's recreated.
+- **Tesseract OCR auto-detect + download prompt** — on startup, if
+  Tesseract isn't found on the PC (`is_tesseract_installed()`), a dialog
+  offers to open the official download page
+  (https://github.com/UB-Mannheim/tesseract/wiki). This never blocks
+  normal usage since OCR is only a fallback for scanned PDFs.
+- **Resolution-aware window sizing** — `fit_to_screen()` scales and centers
+  the main window based on the user's actual screen resolution instead of
+  always opening at a fixed 900×620.
+
 ### Avoiding "hangs" on the target machine
 
 - All PDF parsing/OCR happens on a background `threading.Thread`

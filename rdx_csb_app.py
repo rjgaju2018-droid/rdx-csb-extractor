@@ -17,7 +17,7 @@ Run:
 # ══════════════════════════════════════════════════════════════════════════════
 #  STANDARD IMPORTS
 # ══════════════════════════════════════════════════════════════════════════════
-import os, re, sys, glob, json, math, hashlib, threading, time
+import os, re, sys, glob, json, math, hashlib, threading, time, shutil, subprocess, tempfile, webbrowser
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -130,12 +130,154 @@ def record_run(files_count: int, rows_count: int, output_path: str):
     return stats
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  RESOURCE PATH HELPER  (works both in dev mode and inside a PyInstaller
+#  onefile .exe, where bundled files get unpacked to a temp folder — sys._MEIPASS)
+# ══════════════════════════════════════════════════════════════════════════════
+def resource_path(relative_path: str) -> str:
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  LOGO HELPER
 # ══════════════════════════════════════════════════════════════════════════════
 LOGO_PATHS = [
+    resource_path("rdx_soloution_logo.png"),
+    resource_path("logo.png"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "rdx_soloution_logo.png"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png"),
 ]
+
+ICON_PATHS = [
+    resource_path("icon.ico"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico"),
+]
+
+def set_window_icon(win):
+    """Replace the default Tk/system square icon (title bar + taskbar) with
+    the RDX logo, on every window we open."""
+    for p in ICON_PATHS:
+        if os.path.exists(p):
+            try:
+                win.iconbitmap(p)
+                return
+            except Exception:
+                pass
+    # Fallback for non-Windows / if .ico isn't available: use the PNG logo
+    for p in LOGO_PATHS:
+        if os.path.exists(p):
+            try:
+                img = ImageTk.PhotoImage(Image.open(p))
+                win.iconphoto(True, img)
+                win._icon_ref = img  # keep a reference so it isn't garbage-collected
+                return
+            except Exception:
+                pass
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SCREEN-RESOLUTION AWARE WINDOW SIZING
+# ══════════════════════════════════════════════════════════════════════════════
+def fit_to_screen(win, base_w=900, base_h=620, design_w=1366, design_h=768,
+                   min_scale=0.72, max_scale=1.35):
+    """Scale + center a window's size according to the user's actual screen
+    resolution, instead of always opening at a fixed 900x620 size."""
+    win.update_idletasks()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    scale = min(sw / design_w, sh / design_h)
+    scale = max(min_scale, min(scale, max_scale))
+    w, h = int(base_w * scale), int(base_h * scale)
+    w, h = min(w, sw - 40), min(h, sh - 60)  # never exceed usable screen area
+    x, y = (sw - w) // 2, (sh - h) // 2
+    win.geometry(f"{w}x{h}+{x}+{y}")
+    return w, h
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TESSERACT OCR — DETECT & OFFER DOWNLOAD IF MISSING
+# ══════════════════════════════════════════════════════════════════════════════
+TESSERACT_DOWNLOAD_URL = "https://github.com/UB-Mannheim/tesseract/wiki"
+
+def is_tesseract_installed() -> bool:
+    if shutil.which("tesseract"):
+        return True
+    candidates = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+    return any(os.path.exists(c) for c in candidates)
+
+def prompt_tesseract_if_missing(parent):
+    """Ask the user once (per session) to download Tesseract OCR if it isn't
+    installed. OCR is only a fallback for scanned/image-only PDFs, so this
+    never blocks normal usage — it's just a heads-up + one-click download."""
+    if is_tesseract_installed():
+        return
+    want_download = messagebox.askyesno(
+        "Tesseract OCR Not Found",
+        "Tesseract OCR is not installed on this PC.\n\n"
+        "It is required only as a fallback for scanned / image-only PDFs "
+        "(normal digital CSB-V bills work fine without it).\n\n"
+        "Do you want to open the download page now?",
+        parent=parent,
+    )
+    if want_download:
+        webbrowser.open(TESSERACT_DOWNLOAD_URL)
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DESKTOP + START MENU SHORTCUTS  (created automatically on first run of the
+#  packaged .exe — no extra pip dependency needed, uses Windows' own
+#  WScript.Shell via a tiny throwaway VBScript)
+# ══════════════════════════════════════════════════════════════════════════════
+APP_DISPLAY_NAME = "RDX Solution"
+
+def _make_shortcut(shortcut_path: str, target: str, icon_path: str, working_dir: str):
+    vbs = (
+        'Set oWS = WScript.CreateObject("WScript.Shell")\n'
+        f'sLinkFile = "{shortcut_path}"\n'
+        "Set oLink = oWS.CreateShortcut(sLinkFile)\n"
+        f'oLink.TargetPath = "{target}"\n'
+        f'oLink.WorkingDirectory = "{working_dir}"\n'
+        f'oLink.IconLocation = "{icon_path}"\n'
+        f'oLink.Description = "{APP_DISPLAY_NAME} - CSB-V Extractor"\n'
+        "oLink.Save\n"
+    )
+    vbs_path = os.path.join(tempfile.gettempdir(), "rdx_mkshortcut.vbs")
+    with open(vbs_path, "w") as f:
+        f.write(vbs)
+    try:
+        subprocess.run(["cscript", "//nologo", vbs_path], shell=True,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        timeout=10)
+    finally:
+        try:
+            os.remove(vbs_path)
+        except Exception:
+            pass
+
+def ensure_shortcuts():
+    """Create a Desktop shortcut and a Start Menu entry if they don't already
+    exist. Only runs for the packaged .exe on Windows."""
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    try:
+        exe_path = sys.executable
+        icon_path = exe_path  # the exe already carries the RDX icon resource
+        working_dir = os.path.dirname(exe_path)
+
+        desktop = os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
+        start_menu = os.path.join(
+            os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs"
+        )
+
+        desktop_lnk = os.path.join(desktop, f"{APP_DISPLAY_NAME}.lnk")
+        start_lnk = os.path.join(start_menu, f"{APP_DISPLAY_NAME}.lnk")
+
+        if desktop and not os.path.exists(desktop_lnk):
+            _make_shortcut(desktop_lnk, exe_path, icon_path, working_dir)
+        if os.environ.get("APPDATA") and not os.path.exists(start_lnk):
+            os.makedirs(start_menu, exist_ok=True)
+            _make_shortcut(start_lnk, exe_path, icon_path, working_dir)
+    except Exception:
+        pass  # never let shortcut creation crash the app
 
 def load_logo(size=(220, 90)) -> ImageTk.PhotoImage | None:
     for p in LOGO_PATHS:
@@ -226,6 +368,7 @@ class SplashScreen(tk.Toplevel):
         super().__init__(parent)
         self.overrideredirect(True)
         self.configure(bg=DARK_BG)
+        set_window_icon(self)
 
         W, H = 540, 320
         sw = self.winfo_screenwidth()
@@ -1120,15 +1263,19 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("RDX Solution — Courier Shipping Bill Data Extractor v3.4.2")
-        self.geometry("900x620")
+        fit_to_screen(self, base_w=900, base_h=620)   # auto-adjust per screen resolution
         self.configure(fg_color=DARK_BG)
         self.resizable(False, False)
+        set_window_icon(self)   # RDX logo instead of the default square Tk icon
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         self.current_frame = None
-        
+
+        # Make sure Desktop / Start Menu shortcuts exist (packaged .exe only)
+        ensure_shortcuts()
+
         # Deploy initial Flash splash frame sequence
         self.withdraw()
         splash = SplashScreen(self)
@@ -1138,6 +1285,8 @@ class App(ctk.CTk):
         splash._failsafe_close()
         self.deiconify()
         self._show_login()
+        # Gentle, non-blocking heads-up about Tesseract OCR if it's missing
+        self.after(700, lambda: prompt_tesseract_if_missing(self))
 
     def _switch_frame(self, frame_class, *args, **kwargs):
         if self.current_frame:

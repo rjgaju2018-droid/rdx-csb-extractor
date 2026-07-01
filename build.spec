@@ -11,6 +11,8 @@ if os.path.exists("logo.png"):
     datas.append(("logo.png", "."))
 if os.path.exists("rdx_soloution_logo.png"):
     datas.append(("rdx_soloution_logo.png", "."))
+if os.path.exists("icon.ico"):
+    datas.append(("icon.ico", "."))   # bundled so the running window can set its own titlebar/taskbar icon
 
 a = Analysis(
     ["rdx_csb_app.py"],
