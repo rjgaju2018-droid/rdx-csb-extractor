@@ -23,6 +23,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageTk
+from dotenv import load_dotenv
+
+load_dotenv()
 
 try:
     import psutil
@@ -54,6 +57,10 @@ try:
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
+
+from auth.user_auth import login_user, signup_user
+from auth.user_roles import check_is_admin, log_usage
+from admin_panel import AdminPanel
 
 # ── Auto-updater (GitHub Releases based) ────────────────────────────────────
 from version import __version__
@@ -440,7 +447,6 @@ class LoginPage(ctk.CTkFrame):
     def __init__(self, master, on_login_success):
         super().__init__(master, fg_color=DARK_BG)
         self.on_login_success = on_login_success
-        self.users = load_users()
         self._build()
 
     def _build(self):
@@ -472,8 +478,8 @@ class LoginPage(ctk.CTkFrame):
         ctk.CTkLabel(right, text="Welcome Back", font=("Georgia", 22, "bold"), text_color=GOLD_LIGHT).grid(row=0, column=0, pady=(60, 4), sticky="w")
         ctk.CTkLabel(right, text="Sign in to continue", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=1, column=0, sticky="w", pady=(0, 30))
 
-        ctk.CTkLabel(right, text="Username", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=2, column=0, sticky="w")
-        self.user_entry = ctk.CTkEntry(right, placeholder_text="Enter username", height=42, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1, text_color=WHITE, font=("Segoe UI", 12))
+        ctk.CTkLabel(right, text="Email", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=2, column=0, sticky="w")
+        self.user_entry = ctk.CTkEntry(right, placeholder_text="Enter email", height=42, fg_color=CARD_BG, border_color=GOLD_DARK, border_width=1, text_color=WHITE, font=("Segoe UI", 12))
         self.user_entry.grid(row=3, column=0, sticky="ew", pady=(4, 14))
 
         ctk.CTkLabel(right, text="Password", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=4, column=0, sticky="w")
@@ -520,78 +526,41 @@ class LoginPage(ctk.CTkFrame):
         self.pass_entry.configure(show="" if self.show_pw.get() else "●")
 
     def _login(self):
-        uname, pw = self.user_entry.get().strip(), self.pass_entry.get()
-        self.users = load_users()
-        if not uname or not pw:
-            self.err_label.configure(text="⚠ Username and password are required.")
+        email, pw = self.user_entry.get().strip(), self.pass_entry.get()
+        if not email or not pw:
+            self.err_label.configure(text="⚠ Email and password are required.")
             return
-        if uname not in self.users:
-            self.err_label.configure(text="✗ Username not found.")
+
+        success, message, auth_data = login_user(email, pw)
+        if not success:
+            self.err_label.configure(text=f"✗ {message}")
             return
-        if self.users[uname]["password"] != _hash(pw):
-            self.err_label.configure(text="✗ Incorrect password.")
-            return
+
         self.err_label.configure(text="")
-        self.on_login_success(uname)
+        user_id = None
+        user = auth_data.get("user")
+        if user is not None:
+            user_id = getattr(user, "id", None)
+        self.on_login_success(email, user_id, check_is_admin(user_id))
 
     def _forgot_pw(self):
-        win = ctk.CTkToplevel(self)
-        win.title("Reset Password")
-        win.geometry("380x300")
-        win.configure(fg_color=DARK_BG)
-        win.grab_set()
-
-        ctk.CTkLabel(win, text="Reset Password", font=("Georgia", 16, "bold"), text_color=GOLD_LIGHT).pack(pady=(24, 4))
-        ctk.CTkLabel(win, text="Enter username and new password", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
-
-        u = ctk.CTkEntry(win, placeholder_text="Username", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
-        u.pack(padx=30, fill="x", pady=4)
-        p1 = ctk.CTkEntry(win, placeholder_text="New Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
-        p1.pack(padx=30, fill="x", pady=4)
-        p2 = ctk.CTkEntry(win, placeholder_text="Confirm New Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
-        p2.pack(padx=30, fill="x", pady=4)
-        err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
-        err.pack()
-
-        u.bind("<Return>", lambda e: (p1.focus_set(), "break"))
-        u.bind("<Tab>", lambda e: (p1.focus_set(), "break"))
-        p1.bind("<Return>", lambda e: (p2.focus_set(), "break"))
-        p1.bind("<Tab>", lambda e: (p2.focus_set(), "break"))
-        p2.bind("<Return>", lambda e: do_reset())
-        self.after(150, u.focus_set)
-
-        def do_reset():
-            uname, np1, np2 = u.get().strip(), p1.get(), p2.get()
-            users = load_users()
-            if uname not in users:
-                err.configure(text="✗ Username not found.")
-                return
-            if len(np1) < 6:
-                err.configure(text="⚠ Password must be at least 6 characters.")
-                return
-            if np1 != np2:
-                err.configure(text="✗ Passwords do not match.")
-                return
-            users[uname]["password"] = _hash(np1)
-            save_users(users)
-            messagebox.showinfo("Done", "Password reset successfully! ✅", parent=win)
-            win.destroy()
-
-        ctk.CTkButton(win, text="Reset Password", height=40, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 11, "bold"), command=do_reset).pack(padx=30, fill="x", pady=12)
+        messagebox.showinfo(
+            "Reset Password",
+            "Password reset is handled by Supabase. Please use the Supabase dashboard or reset email flow.",
+            parent=self,
+        )
 
     def _new_account(self):
         win = ctk.CTkToplevel(self)
         win.title("Create Account")
-        win.geometry("380x360")
+        win.geometry("380x300")
         win.configure(fg_color=DARK_BG)
         win.grab_set()
 
         ctk.CTkLabel(win, text="Create Account", font=("Georgia", 16, "bold"), text_color=GOLD_LIGHT).pack(pady=(24, 4))
-        ctk.CTkLabel(win, text="Set up your extraction credentials", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
+        ctk.CTkLabel(win, text="Register with your email and password", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(pady=(0, 16))
 
-        u = ctk.CTkEntry(win, placeholder_text="Username", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
-        u.pack(padx=30, fill="x", pady=4)
-        em = ctk.CTkEntry(win, placeholder_text="Email (optional)", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
+        em = ctk.CTkEntry(win, placeholder_text="Email", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         em.pack(padx=30, fill="x", pady=4)
         p1 = ctk.CTkEntry(win, placeholder_text="Password", show="●", height=38, fg_color=CARD_BG, border_color=GOLD_DARK, text_color=WHITE)
         p1.pack(padx=30, fill="x", pady=4)
@@ -600,29 +569,29 @@ class LoginPage(ctk.CTkFrame):
         err = ctk.CTkLabel(win, text="", text_color=RED_ERR, font=("Segoe UI", 10))
         err.pack()
 
-        u.bind("<Return>", lambda e: (em.focus_set(), "break"))
-        u.bind("<Tab>", lambda e: (em.focus_set(), "break"))
         em.bind("<Return>", lambda e: (p1.focus_set(), "break"))
         em.bind("<Tab>", lambda e: (p1.focus_set(), "break"))
         p1.bind("<Return>", lambda e: (p2.focus_set(), "break"))
         p1.bind("<Tab>", lambda e: (p2.focus_set(), "break"))
         p2.bind("<Return>", lambda e: do_create())
-        self.after(150, u.focus_set)
+        self.after(150, em.focus_set)
 
         def do_create():
-            uname, email, np1, np2 = u.get().strip(), em.get().strip(), p1.get(), p2.get()
-            users = load_users()
-            if not uname:
-                err.configure(text="⚠ Username is required."); return
-            if uname in users:
-                err.configure(text="✗ Username already exists."); return
+            email, np1, np2 = em.get().strip(), p1.get(), p2.get()
+            if not email:
+                err.configure(text="⚠ Email is required.")
+                return
             if len(np1) < 6:
-                err.configure(text="⚠ Password must be at least 6 characters."); return
+                err.configure(text="⚠ Password must be at least 6 characters.")
+                return
             if np1 != np2:
-                err.configure(text="✗ Passwords do not match."); return
-            users[uname] = {"password": _hash(np1), "email": email}
-            save_users(users)
-            messagebox.showinfo("Success", f"Account '{uname}' created! ✅\nPlease login.", parent=win)
+                err.configure(text="✗ Passwords do not match.")
+                return
+            success, message, _ = signup_user(email, np1)
+            if not success:
+                err.configure(text=f"✗ {message}")
+                return
+            messagebox.showinfo("Success", "Account created! ✅\nPlease login.", parent=win)
             win.destroy()
 
         ctk.CTkButton(win, text="Create Account", height=40, fg_color=GOLD_MID, hover_color=GOLD_DARK, text_color=DARK_BG, font=("Segoe UI", 11, "bold"), command=do_create).pack(padx=30, fill="x", pady=12)
@@ -631,9 +600,11 @@ class LoginPage(ctk.CTkFrame):
 #  DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 class Dashboard(ctk.CTkFrame):
-    def __init__(self, master, username, on_open_processing):
+    def __init__(self, master, username, user_id=None, is_admin=False, on_open_processing=None):
         super().__init__(master, fg_color=DARK_BG)
         self.username = username
+        self.user_id = user_id
+        self.is_admin = is_admin
         self.on_open_processing = on_open_processing
         self._build()
 
@@ -656,6 +627,8 @@ class Dashboard(ctk.CTkFrame):
         user_frame.grid(row=0, column=2, padx=16)
         ctk.CTkLabel(user_frame, text=f"👤 {self.username}", font=("Segoe UI", 10), text_color=GREY_TEXT).pack(side="left", padx=(0, 8))
         ctk.CTkButton(user_frame, text="Logout", width=70, height=28, fg_color=GOLD_DARK, hover_color=RED_ERR, text_color=WHITE, font=("Segoe UI", 9), command=self._logout).pack(side="left")
+        if self.is_admin:
+            ctk.CTkButton(user_frame, text="Admin Panel", width=110, height=28, fg_color=GOLD_MID, hover_color=GOLD_LIGHT, text_color=DARK_BG, font=("Segoe UI", 9), command=self._open_admin_panel).pack(side="left", padx=(8,0))
 
         ctk.CTkLabel(self, text=f"Welcome back, {self.username} 👋", font=("Georgia", 20, "bold"), text_color=GOLD_LIGHT).grid(row=1, column=0, sticky="w", padx=30, pady=(24, 2))
         ctk.CTkLabel(self, text="Courier Shipping Bill Data Extractor — overview", font=("Segoe UI", 11), text_color=GREY_TEXT).grid(row=2, column=0, sticky="w", padx=30, pady=(0, 16))
@@ -738,7 +711,13 @@ class Dashboard(ctk.CTkFrame):
 
     def _open(self):
         self._monitoring = False
-        self.on_open_processing(self.username)
+        self.on_open_processing(self.username, self.user_id)
+
+    def _open_admin_panel(self):
+        if not self.is_admin or not self.user_id:
+            messagebox.showwarning("Access denied", "Admin Panel access requires an admin account.")
+            return
+        AdminPanel(self, self.user_id)
 
     def _logout(self):
         self._monitoring = False
@@ -1102,9 +1081,10 @@ def parse_bill(pdf_path):
 #  PROCESSING WINDOW
 # ══════════════════════════════════════════════════════════════════════════════
 class ProcessingWindow(ctk.CTkFrame):
-    def __init__(self, master, username):
+    def __init__(self, master, username, user_id=None):
         super().__init__(master, fg_color=DARK_BG)
         self.username = username
+        self.user_id = user_id
         self.selected_files = []
         self._build()
 
@@ -1274,6 +1254,8 @@ class ProcessingWindow(ctk.CTkFrame):
 
             wb.save(out_fp)
             record_run(tot, len(all_rows), out_fp)
+            if self.user_id:
+                log_usage(self.user_id, f"extraction:{len(all_rows)} rows from {tot} files")
             self._log(f"💥 PIPELINE COMPLETE! Ledger compiled and securely written to:\n 👉 {out_fp}\n")
             messagebox.showinfo("Pipeline Complete", f"Data matrices successfully compiled!\nProcessed: {tot} files\nExtracted: {len(all_rows)} records.")
         except Exception as e:
@@ -1328,11 +1310,17 @@ class App(ctk.CTk):
     def _show_login(self):
         self._switch_frame(LoginPage, on_login_success=self._show_dashboard)
 
-    def _show_dashboard(self, username):
-        self._switch_frame(Dashboard, username=username, on_open_processing=self._show_processing)
+    def _show_dashboard(self, username, user_id=None, is_admin=False):
+        self._switch_frame(
+            Dashboard,
+            username=username,
+            user_id=user_id,
+            is_admin=is_admin,
+            on_open_processing=self._show_processing,
+        )
 
-    def _show_processing(self, username):
-        self._switch_frame(ProcessingWindow, username=username)
+    def _show_processing(self, username, user_id=None):
+        self._switch_frame(ProcessingWindow, username=username, user_id=user_id)
 
 if __name__ == "__main__":
     app = App()

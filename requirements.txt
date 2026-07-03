@@ -9,3 +9,4 @@ pandas>=2.0.0
 karrio[fedex,ups,dhl,aramex]
 python-dotenv
 flask
+supabase
