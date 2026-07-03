@@ -38,8 +38,13 @@ except AttributeError:
 import pandas as pd
 import pdfplumber
 from openpyxl import Workbook
+from carriers.tracking import track_shipment
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# Example courier tracking usage (not yet integrated into UI):
+# tracking_info = track_shipment("1234567890", "fedex")
+# print(tracking_info)
 
 try:
     import fitz

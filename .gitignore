@@ -19,3 +19,4 @@ rdx_stats.json
 Thumbs.db
 .vscode/
 .idea/
+.env
