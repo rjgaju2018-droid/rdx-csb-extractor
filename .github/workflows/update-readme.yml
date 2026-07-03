@@ -1,0 +1,69 @@
+name: Update README Changelog on Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README changelog
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+        run: |
+          python - <<'PY'
+          import os, datetime, sys
+          tag = os.getenv('RELEASE_TAG') or ''
+          body = os.getenv('RELEASE_BODY') or ''
+          name = os.getenv('RELEASE_NAME') or tag
+          date = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+          entry_lines = [f"### {tag} — {date}", "", body.strip(), ""]
+          entry = "\n".join([ln for ln in entry_lines if ln is not None]) + "\n"
+
+          readme = 'README.md'
+          if not os.path.exists(readme):
+              print('README.md not found, creating new file with Changelog')
+              with open(readme, 'w', encoding='utf-8') as f:
+                  f.write('# Project\n\n## Changelog\n\n' + entry)
+              sys.exit(0)
+
+          with open(readme, 'r', encoding='utf-8') as f:
+              text = f.read()
+
+          if '## Changelog' not in text:
+              # append Changelog at end
+              if not text.endswith('\n'):
+                  text += '\n'
+              text += '## Changelog\n\n' + entry
+          else:
+              before, sep, after = text.partition('## Changelog')
+              # Insert entry right after the header
+              new_text = before + '## Changelog' + '\n\n' + entry + after.lstrip('\n')
+              text = new_text
+
+          with open(readme, 'w', encoding='utf-8') as f:
+              f.write(text)
+          print('README.md updated with new changelog entry')
+          PY
+
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update README Changelog for $RELEASE_TAG" || echo "No changes to commit"
+          git push origin HEAD:main
