@@ -1,0 +1,20 @@
+{
+  "fedex_api_key": "",
+  "fedex_secret_key": "",
+  "dhl_api_key": "",
+  "ups_api_key": "",
+  "ups_client_id": "",
+  "ups_client_secret": "",
+  "aramex_username": "",
+  "aramex_password": "",
+  "aramex_account_no": "",
+  "aramex_account_pin": "",
+  "aramex_account_entity": "",
+  "aramex_country_code": "IN",
+  "shiprocket_email": "",
+  "shiprocket_password": "",
+  "onpoint_api_key": "",
+  "shipglobal_api_key": "",
+  "xindus_api_key": "",
+  "xindus_client_id": ""
+}
