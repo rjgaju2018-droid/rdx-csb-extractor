@@ -1308,13 +1308,37 @@ class CourierTrackerPage(ctk.CTkFrame):
         self._config = self._load_config()
         self._build()
 
-    # ── config.json (same file the standalone tracker uses) ─────────────────
-    def _config_path(self):
+    # ── config.json ───────────────────────────────────────────────────────
+    # IMPORTANT: when running as a PyInstaller --onefile .exe, everything under
+    # _COURIER_TRACKER_DIR lives inside the temporary extraction folder
+    # (sys._MEIPASS) which is deleted after the app closes. Saving user-entered
+    # API keys there would silently lose them on every restart. Instead we keep
+    # the *editable* config next to the .exe itself (or next to the .py file
+    # when running from source), and only use the bundled config.json as a
+    # one-time template the first time the app runs.
+    def _persistent_config_path(self):
+        if getattr(sys, "frozen", False):
+            persist_dir = os.path.dirname(sys.executable)
+        else:
+            persist_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(persist_dir, "courier_config.json")
+
+    def _bundled_template_path(self):
         return os.path.join(_COURIER_TRACKER_DIR, "config.json")
 
+    def _config_path(self):
+        return self._persistent_config_path()
+
     def _load_config(self):
+        # 1) Prefer the persistent, user-editable config next to the exe.
         try:
-            with open(self._config_path()) as f:
+            with open(self._persistent_config_path()) as f:
+                return json.load(f)
+        except Exception:
+            pass
+        # 2) Fall back to the bundled template (first run / template missing).
+        try:
+            with open(self._bundled_template_path()) as f:
                 return json.load(f)
         except Exception:
             return {}
