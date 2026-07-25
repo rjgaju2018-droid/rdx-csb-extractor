@@ -16,7 +16,6 @@ import requests
 import threading
 import time
 import json
-import re
 import random
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -812,12 +811,12 @@ class XindusTracker(BaseTracker):
 
 # ─── AUTO-DETECT COURIER ────────────────────────────────────────────
 PATTERNS = [
+    ("UPS",        [r"^1Z[A-Z0-9]+$", r"^T\d{10}$", r"^\d{9}$"]),
     ("FedEx",      [r"^\d{12}$", r"^\d{15}$", r"^\d{20}$",
                     r"^96\d{18}$", r"^7489\d{16}$", r"^02\d{18}$"]),
-    ("UPS",        [r"^1Z[A-Z0-9]{16}$", r"^T\d{10}$", r"^\d{9}$"]),
     ("DHL",        [r"^JD\d{18}$", r"^\d{10}$", r"^[A-Z]{2}\d{9}[A-Z]{2}$"]),
     ("Aramex",     [r"^\d{11}$", r"^6\d{10}$", r"^AR\d{9,12}$", r"^1\d{10}$"]),
-    ("Shiprocket", [r"^SR\d{8,12}$", r"^SRIN\d{6,10}$"]),
+    ("Shiprocket", [r"^SR[A-Z0-9]{8,12}$", r"^SRIN\d{6,10}$"]),
     ("OnPoint",    [r"^OP\d{8,12}$", r"^ON\d{10}$"]),
     ("ShipGlobal", [r"^SG[A-Z0-9]{8,12}$", r"^SGI\d{9}$"]),
     ("Xindus",     [r"^XI\d{8,12}$", r"^XD\d{10}$"]),
