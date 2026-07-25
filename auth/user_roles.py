@@ -30,3 +30,19 @@ def log_usage(user_id: str, action: str) -> None:
         supabase.from_("usage_logs").insert({"user_id": user_id, "action": action}).execute()
     except Exception:
         pass
+
+
+def set_admin_status(user_id: str, is_admin: bool) -> tuple[bool, Optional[str]]:
+    """Updates the admin status for a user in the 'profiles' table.
+    Also updates the 'role' column based on the is_admin status.
+    """
+    try:
+        # Supabase expects a dictionary for update operations
+        data = {"is_admin": is_admin, "role": "admin" if is_admin else "user"}
+        
+        # Perform the update
+        res = supabase.table("profiles").update(data).eq("id", user_id).execute()
+        
+        return True, None if res.data else f"User with ID {user_id} not found or no change applied."
+    except Exception as e:
+        return False, f"Database error: {e}"
